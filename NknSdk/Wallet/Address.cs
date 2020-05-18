@@ -14,14 +14,14 @@ namespace NknSdk.Wallet
             try
             {
                 var addressBytes = address.Base58Decode();
-                if (addressBytes.Length != WalletConstants.AddressLength)
+                if (addressBytes.Length != Constants.AddressLength)
                 {
                     return false;
                 }
 
-                var addressPrefixBytes = new ArraySegment<byte>(addressBytes, 0, WalletConstants.AddressPrefixLength);
+                var addressPrefixBytes = new ArraySegment<byte>(addressBytes, 0, Constants.AddressPrefixLength);
                 var addressPrefix = addressPrefixBytes.ToArray().ToHexString();
-                if (addressPrefix != WalletConstants.AddressPrefix)
+                if (addressPrefix != Constants.AddressPrefix)
                 {
                     return false;
                 }
@@ -53,7 +53,7 @@ namespace NknSdk.Wallet
         {
             var addressVerifyBytes = GenerateAddressVerificationBytesFromProgramHash(programHash);
             
-            var addressBaseData = (WalletConstants.AddressPrefix + programHash).FromHexString();
+            var addressBaseData = (Constants.AddressPrefix + programHash).FromHexString();
             
             var result = addressBaseData.Concat(addressVerifyBytes);
             
@@ -90,9 +90,9 @@ namespace NknSdk.Wallet
         {
             var addressBytes = address.Base58Decode();
             
-            var bytesToTake = addressBytes.Length - WalletConstants.AddressPrefixLength - WalletConstants.CheckSumLength;
+            var bytesToTake = addressBytes.Length - Constants.AddressPrefixLength - Constants.CheckSumLength;
             
-            var programHashBytes = new ArraySegment<byte>(addressBytes, WalletConstants.AddressPrefixLength, bytesToTake);
+            var programHashBytes = new ArraySegment<byte>(addressBytes, Constants.AddressPrefixLength, bytesToTake);
             
             return programHashBytes.ToArray().ToHexString();
         }
@@ -101,14 +101,14 @@ namespace NknSdk.Wallet
         {
             var addressBytes = address.Base58Decode();
 
-            var verificationBytes = new ArraySegment<byte>(addressBytes, addressBytes.Length - WalletConstants.CheckSumLength, WalletConstants.CheckSumLength);
+            var verificationBytes = new ArraySegment<byte>(addressBytes, addressBytes.Length - Constants.CheckSumLength, Constants.CheckSumLength);
             
             return verificationBytes.ToArray().ToHexString();
         }
 
         private static byte[] GenerateAddressVerificationBytesFromProgramHash(string programHash)
         {
-            var prefixedProgramHash = WalletConstants.AddressPrefix + programHash;
+            var prefixedProgramHash = Constants.AddressPrefix + programHash;
 
             var prefixedProgramHashBytes = prefixedProgramHash.FromHexString();
 
@@ -116,7 +116,7 @@ namespace NknSdk.Wallet
 
             var verificationBytes = programHashHex.FromHexString();
 
-            var addressVerificationBytes = verificationBytes.Take(WalletConstants.CheckSumLength).ToArray();
+            var addressVerificationBytes = verificationBytes.Take(Constants.CheckSumLength).ToArray();
 
             return addressVerificationBytes;
         }

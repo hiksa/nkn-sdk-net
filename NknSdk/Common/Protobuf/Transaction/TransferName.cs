@@ -6,7 +6,7 @@ using System.Text;
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class TransferName
+    public class TransferName : ISerializable
     {
         [ProtoMember(1)]
         public string Name { get; set; }

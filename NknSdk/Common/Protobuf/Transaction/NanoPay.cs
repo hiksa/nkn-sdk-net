@@ -3,7 +3,7 @@
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class NanoPay
+    public class NanoPay : ISerializable
     {
         [ProtoMember(1)]
         public byte[] Sender { get; set; }

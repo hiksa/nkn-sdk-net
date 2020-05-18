@@ -1,5 +1,6 @@
 using NknSdk.Client;
 using NknSdk.Common;
+using NknSdk.Common.Protobuf;
 using NknSdk.Common.Protobuf.Messages;
 using NknSdk.Common.Protobuf.SignatureChain;
 using Xunit;
@@ -94,7 +95,7 @@ namespace NknSdk.Tests.Client
             var seed = "d0de404077ede0fdd1dfd15ab2934018fa2f8d1ac1effb4af577dbedc897b0b8";
             var key = new CryptoKey(seed);
 
-            var inboundMessage = rawMessage.BytesTo<InboundMessage>();
+            var inboundMessage = rawMessage.FromBytes<InboundMessage>();
 
             Assert.Equal(expectedInboundMessage.Source, inboundMessage.Source);
             Assert.Equal(expectedInboundMessage.Payload, inboundMessage.Payload);

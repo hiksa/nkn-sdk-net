@@ -3,7 +3,7 @@
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class DeleteName
+    public class DeleteName : ISerializable
     {
         [ProtoMember(1)]
         public byte[] Registrant { get; set; }

@@ -3,7 +3,7 @@
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class Subscribe
+    public class Subscribe : ISerializable
     {
         [ProtoMember(1)]
         public byte[] Subscriber { get; set; }

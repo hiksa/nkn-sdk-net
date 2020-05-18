@@ -1,4 +1,5 @@
 ﻿using NknSdk.Common;
+using NknSdk.Common.Exceptions;
 using NknSdk.Common.Protobuf;
 using NknSdk.Common.Protobuf.Messages;
 using NknSdk.Common.Protobuf.Payloads;
@@ -10,7 +11,7 @@ using System.Text;
 
 namespace NknSdk.Client
 {
-    public class MessageFactory
+    public static class MessageFactory
     {
         public static Payload MakePayload(PayloadType type, string replyToId, byte[] data, string messageId)
         {
@@ -26,7 +27,7 @@ namespace NknSdk.Client
             }
             else
             {
-                payload.MessageId = PseudoRandom.RandomBytes(ClientConstants.MessageIdLength);
+                payload.MessageId = PseudoRandom.RandomBytes(Constants.MessageIdLength);
             }
 
             payload.Data = data;
@@ -39,10 +40,10 @@ namespace NknSdk.Client
 
         public static Payload MakeTextPayload(string text, string replyToId, string messageId)
         {
-            var data = new TextDataPayload { Text = text };
-            var serialized = ProtoSerializer.Serialize(data);
+            var textDataPayload = new TextDataPayload { Text = text };
+            var data = ProtoSerializer.Serialize(textDataPayload);
 
-            return MakePayload(PayloadType.Text, replyToId, serialized, messageId);
+            return MakePayload(PayloadType.Text, replyToId, data, messageId);
         }
 
         public static Payload MakeAckPayload(string replyToId, string messageId)
@@ -53,7 +54,7 @@ namespace NknSdk.Client
 
         public static MessagePayload MakeMessage(byte[] payload, bool encrypted, byte[] nonce = null, byte[] encryptedKey = null)
         {
-            var message = new Common.Protobuf.Payloads.MessagePayload
+            var message = new MessagePayload
             {
                 Payload = payload,
                 IsEncrypted = encrypted,
@@ -81,7 +82,7 @@ namespace NknSdk.Client
                     clientMessage.Message = message.Compress();
                     break;
                 default:
-                    throw new ArgumentException($"unknown compression type {compressionType}", nameof(compressionType));
+                    throw new InvalidArgumentException($"unknown compression type {compressionType}");
             }
 
             return clientMessage;
@@ -91,17 +92,17 @@ namespace NknSdk.Client
         {
             if (destinations == null || destinations.Count() == 0)
             {
-                throw new ArgumentException("No destination", nameof(destinations));
+                throw new InvalidArgumentException("No destination");
             }
 
             if (payloads == null || payloads.Count() == 0)
             {
-                throw new ArgumentException("No payloads", nameof(payloads));
+                throw new InvalidArgumentException("No payloads");
             }
 
             if (payloads.Count() > 1 && payloads.Count() != destinations.Count())
             {
-                throw new ArgumentException("Invalid payloads count");
+                throw new InvalidArgumentException("Invalid payloads count");
             }
 
             var signatureChainElement = new SignatureChainElement();
@@ -111,8 +112,8 @@ namespace NknSdk.Client
             var signatureChain = new SignatureChain
             {
                 Nonce = (uint)PseudoRandom.RandomInt(),
-                SourceId = AddressToId(client.address).FromHexString(),
-                SourcePublicKey = client.GetPublicKey().FromHexString()
+                SourceId = Client.AddressToId(client.address).FromHexString(),
+                SourcePublicKey = client.PublicKey.FromHexString()
             };
 
             if (!string.IsNullOrWhiteSpace(client?.signatureChainBlockHash))
@@ -124,8 +125,8 @@ namespace NknSdk.Client
 
             for (int i = 0; i < destinations.Count; i++)
             {
-                signatureChain.DestinationId = AddressToId(destinations[i]).FromHexString();
-                signatureChain.DestinationPublicKey = AddressToPublicKey(destinations[i]).FromHexString();
+                signatureChain.DestinationId = Client.AddressToId(destinations[i]).FromHexString();
+                signatureChain.DestinationPublicKey = Client.AddressToPublicKey(destinations[i]).FromHexString();
                 if (payloads.Count > 1)
                 {
                     signatureChain.DataSize = (uint)payloads[i].Length;
@@ -207,13 +208,5 @@ namespace NknSdk.Client
 
             return result;
         }
-
-        public static string AddressToId(string address)
-            => Crypto.Sha256(address);
-
-        public static string AddressToPublicKey(string address)
-            => address
-                .Split(new char[] { '.' }, StringSplitOptions.RemoveEmptyEntries)
-                .LastOrDefault();
     }
 }

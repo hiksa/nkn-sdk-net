@@ -2,7 +2,6 @@
 using NknSdk.Client;
 using NknSdk.Client.Model;
 using NknSdk.Common;
-using NknSdk.MultiClient;
 using System;
 using System.Threading.Tasks;
 
@@ -24,8 +23,8 @@ namespace Playground
             var options = MultiClientOptions.Default;
             options.NumberOfSubClients = 1;
             options.ResponseTimeout = 500_000;
-            options.Seed = seed4;
-            options.Identifier = "55";
+            options.Seed = seed1;
+            //options.Identifier = "55";
 
             var sessionConfig = SessionConfiguration.Default;
 
@@ -43,20 +42,7 @@ namespace Playground
 
                 Task.Run(async delegate
                 {
-                    var session = await client.Dial(address2, sessionConfig);
-
-                    await Task.Delay(2000);
-
-                    var c = 0;
-                    while (true)
-                    {
-                        Console.WriteLine("Session writing... " + c);
-                        await session.WriteAsync(new byte[] { (byte)c, (byte)c, (byte)c });
-
-                        c++;
-
-                        await Task.Delay(300);
-                    }
+                    
                 });
                 //client
                 //    .Send(
@@ -66,7 +52,7 @@ namespace Playground
                 //    .GetAwaiter()
                 //    .GetResult();
 
-                //   var session = client.Dial(address4, SessionConfiguration.Default).GetAwaiter().GetResult();
+              //  var session = client.Dial(address2, SessionConfiguration.Default).GetAwaiter().GetResult();
 
                 //   Console.WriteLine(session.Config.CheckBytesReadInterval);
 
@@ -104,26 +90,40 @@ namespace Playground
                 Console.WriteLine(x.Config.CheckBytesReadInterval);
                 sess = x;
 
-                //Task.Factory.StartNew(async delegate
-                //{
-                //    //sess.WriteAsync(new byte[] { 5 }).GetAwaiter().GetResult();
+                Task.Factory.StartNew(async delegate
+                {
+                    //var c = 0;
+                    //while (true)
+                    //{
+                    //    var payload = new byte[] { (byte)c, (byte)c, (byte)c };
+                    //    Console.WriteLine("Session writing... " + string.Join(", ", payload));
+                    //    await sess.WriteAsync(payload);
 
-                //    //await Task.Delay(60_000);
+                    //    c++;
 
-                //    var c = 0;
-                //    while (true)
-                //    {
-                //        if (sess != null)
-                //        {
-                //            var test = await sess.ReadAsync();
-                //            Console.WriteLine("Session read " + c);
-                //            c++;
-                //            Console.WriteLine(string.Join(", ", test));
-                //        }
+                    //    await Task.Delay(1000);
+                    //}
 
-                //        await Task.Delay(100);
-                //    }
-                //});
+
+                    var c = 0;
+                    while (true)
+                    {
+                        if (sess != null)
+                        {
+                            try
+                            {
+                                var test = await sess.ReadAsync();
+                                Console.WriteLine("Session read " + c);
+                                c++;
+                                Console.WriteLine(string.Join(", ", test));
+                            }
+                            catch (Exception e)
+                            {
+
+                            }
+                        }
+                    }
+                });
 
                 return Task.FromResult((object)true);
             });

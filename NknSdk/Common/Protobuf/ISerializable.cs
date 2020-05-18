@@ -2,7 +2,7 @@
 using System.Collections.Generic;
 using System.Text;
 
-namespace NknSdk.Common.Protobuf.Messages
+namespace NknSdk.Common.Protobuf
 {
     public interface ISerializable
     {
@@ -10,7 +10,7 @@ namespace NknSdk.Common.Protobuf.Messages
 
     public static class ISerializableExtensions
     {
-        public static T BytesTo<T>(this byte[] data) where T : class, ISerializable
+        public static T FromBytes<T>(this byte[] data) where T : class, ISerializable
         {
             var result = ProtoSerializer.Deserialize<T>(data);
 

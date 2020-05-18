@@ -1,8 +1,10 @@
-﻿using Ncp.Protobuf;
+﻿using Ncp.Exceptions;
+using Ncp.Protobuf;
 using Open.ChannelExtensions;
 using Priority_Queue;
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Security.Cryptography.X509Certificates;
 using System.Threading;
@@ -15,12 +17,12 @@ namespace Ncp
     {
         private readonly Session session;
 
-        private readonly Channel<int?> sendWindowUpdate;
+        private readonly Channel<uint?> sendWindowUpdate;
 
-        private readonly IDictionary<int, DateTime> timeSentSeq;
-        private readonly IDictionary<int, DateTime> resentSeq;
-        private readonly SimplePriorityQueue<int> sendAckQueue;
-
+        private readonly IDictionary<uint, DateTime> timeSentSeq;
+        private readonly IDictionary<uint, DateTime> resentSeq;
+        private readonly ConcurrentPriorityQueue<uint, uint> sendAckQueue;
+        
         public Connection(Session session, string localClientId, string remoteClientId)
         {
             this.session = session;
@@ -30,11 +32,11 @@ namespace Ncp
             this.WindowSize = session.Config.InitialConnectionWindowSize;
             this.RetransmissionTimeout = session.Config.InitialRetransmissionTimeout;
 
-            this.sendWindowUpdate = Channel.CreateBounded<int?>(10);
+            this.sendWindowUpdate = Channel.CreateBounded<uint?>(1);
 
-            this.timeSentSeq = new Dictionary<int, DateTime>();
-            this.resentSeq = new Dictionary<int, DateTime>();
-            this.sendAckQueue = new SimplePriorityQueue<int>();
+            this.timeSentSeq = new ConcurrentDictionary<uint, DateTime>();
+            this.resentSeq = new ConcurrentDictionary<uint, DateTime>();
+            this.sendAckQueue = new ConcurrentPriorityQueue<uint, uint>();
         }
 
         public string LocalClientId { get; }
@@ -47,16 +49,12 @@ namespace Ncp
 
         public string Key => this.LocalClientId + " - " + this.RemoteClientId;
 
-        public static string MakeConnectionKey(string localClientId, string remoteClientId)
+        public static string GetKey(string localClientId, string remoteClientId)
             => localClientId + " - " + remoteClientId;
 
-        public int SendWindowUsed() => this.timeSentSeq.Count;
+        public void SendAck(uint sequenceId) => this.sendAckQueue.Enqueue(sequenceId, sequenceId);
 
-        public void SendAck(int sequenceId) => this.sendAckQueue.Enqueue(sequenceId, sequenceId);
-
-        public int SendAckQueueLength() => this.sendAckQueue.Count;
-
-        public async Task ReceiveAck(int sequenceId, bool isSentByMe)
+        public async Task ReceiveAckAsync(uint sequenceId, bool isSentByMe)
         {
             if (!this.timeSentSeq.ContainsKey(sequenceId))
             {
@@ -74,7 +72,7 @@ namespace Ncp
 
             if (isSentByMe)
             {
-                var rtt = (DateTime.Now - this.timeSentSeq[sequenceId]).TotalSeconds;
+                var rtt = (DateTime.Now - this.timeSentSeq[sequenceId]).TotalMilliseconds;
 
                 this.RetransmissionTimeout += (int)Math.Tanh((3 * rtt - this.RetransmissionTimeout) / 1000) * 100;
                 if (this.RetransmissionTimeout > this.session.Config.MaxRetransmissionTimeout)
@@ -86,21 +84,40 @@ namespace Ncp
             this.timeSentSeq.Remove(sequenceId);
             this.resentSeq.Remove(sequenceId);
 
-            await this.sendWindowUpdate.Writer.WriteAsync(null);
-            await NcpChannel.SelectChannel(this.sendWindowUpdate, NcpChannel.ClosedChannel);
+            var cts = new CancellationTokenSource();
+            var channelTasks = new List<Task<Channel<uint?>>>
+            {
+                this.sendWindowUpdate.Push(null, cts.Token),
+                Constants.ClosedChannel.Shift(cts.Token)
+            };
+
+            await channelTasks.SelectAsync(cts);
         }
 
-        public async Task WaitForSendWindow(Context context)
+        private int SendWindowUsed() => this.timeSentSeq.Count;
+
+        private int SendAckQueueLength() => this.sendAckQueue.Count;
+
+        private async Task WaitForSendWindowAsync(Context context)
         {
             while (this.SendWindowUsed() >= this.WindowSize)
             {
-                var timeout = Util.MakeTimeoutChannel(Constants.MaximumWaitTime);
-                var result = await NcpChannel.SelectChannel(this.sendWindowUpdate, timeout, context.Done);
-                if (result == timeout)
+                var timeout = Constants.MaximumWaitTime.ToTimeoutChannel();
+                var cts = new CancellationTokenSource();
+
+                var channelTasks = new List<Task<Channel<uint?>>>
+                { 
+                    this.sendWindowUpdate.Shift(cts.Token),
+                    timeout.Shift(cts.Token),
+                    context.Done.Shift(cts.Token) 
+                };
+
+                var channel = await channelTasks.SelectAsync(cts);
+                if (channel == timeout)
                 {
-                    throw new Exception();
+                    throw Constants.MaxWaitError;
                 }
-                else if (result == context.Done)
+                else if (channel == context.Done)
                 {
                     throw context.Error;
                 }
@@ -109,33 +126,38 @@ namespace Ncp
 
         public void Start()
         {
-            Task.Factory.StartNew(this.Tx);
-            Task.Factory.StartNew(this.SendAck);
-            Task.Factory.StartNew(this.CheckTimeout);
+            Task.Run(this.SendDataAsync);
+            Task.Run(this.SendAckAsync);
+            Task.Run(this.CheckTimeoutAsync);
         }
         
-        public async Task Tx()
+        private async Task SendDataAsync()
         {
-            var seq = 0;
+            uint seq = 0;
             while (true)
             {
                 if (seq == 0)
                 {
-                    seq = await this.session.GetResendSeq();
+                    seq = await this.session.GetResendSequenceAsync();
                 }
 
                 if (seq == 0)
                 {
                     try
                     {
-                        await this.WaitForSendWindow(this.session.Context);
+                        await this.WaitForSendWindowAsync(this.session.Context);
                     }
                     catch (Exception e)
                     {
-                        //TODO ...
+                        if (e == Constants.MaxWaitError)
+                        {
+                            continue;
+                        }
+
+                        throw e;
                     }
 
-                    seq = (await this.session.GetSendSequence()).Value;
+                    seq = (await this.session.GetSendSequenceAsync()).Value;
                 }
 
                 var buffer = this.session.GetDataToSend(seq);
@@ -149,17 +171,24 @@ namespace Ncp
 
                 try
                 {
-                    await this.session.SendWith(this.LocalClientId, this.RemoteClientId, buffer);
+                    await this.session.SendWithAsync(this.LocalClientId, this.RemoteClientId, buffer);
                 }
                 catch (Exception)
                 {
                     if (this.session.IsClosed)
                     {
-                        throw new Exception();
+                        throw new SessionClosedException();
                     }
 
-                    await this.session.resendChan.Writer.WriteAsync(seq);
-                    var channel = await NcpChannel.SelectChannel(this.session.resendChan, this.session.Context.Done);
+                    var cts = new CancellationTokenSource();
+                    var channelTasks = new List<Task<Channel<uint?>>>
+                    {
+                        this.session.resendChan.Push(seq, cts.Token),
+                        this.session.Context.Done.Shift(cts.Token)
+                    };
+
+                    var channel = await channelTasks.SelectAsync(cts);
+
                     if (channel == this.session.resendChan)
                     {
                         seq = 0;
@@ -185,13 +214,15 @@ namespace Ncp
             }
         }
 
-        public async Task SendAck()
+        private async Task SendAckAsync()
         {
             while (true)
             {
-                var timeout = Util.MakeTimeoutChannel(this.session.Config.SendAckInterval);
-                var channel = await NcpChannel.SelectChannel(timeout, this.session.Context.Done);
-
+                var timeout = this.session.Config.SendAckInterval.ToTimeoutChannel();
+                var cts = new CancellationTokenSource();
+                var channelTasks = new List<Task<Channel<uint?>>> { timeout.Shift(cts.Token), this.session.Context.Done.Shift(cts.Token) };
+                
+                var channel = await channelTasks.SelectAsync(cts);
                 if (channel == this.session.Context.Done)
                 {
                     throw this.session.Context.Error;
@@ -202,73 +233,88 @@ namespace Ncp
                     continue;
                 }
 
-                var ackStartSeqList = new List<int>();
-                var ackSeqCountList = new List<int>();
+                var ackStartSeqList = new List<uint>();
+                var ackSeqCountList = new List<uint>();
 
                 while (this.SendAckQueueLength() > 0 && ackStartSeqList.Count < this.session.Config.MaxAckSeqListSize)
                 {
-                    var ackStartSeq = this.sendAckQueue.Dequeue();
-                    var ackSeqCount = 0;
-                    while (this.SendAckQueueLength() > 0 && this.sendAckQueue.First == Util.NextSequence(ackStartSeq, ackSeqCount))
+                    this.sendAckQueue.TryDequeue(out var result);
+                    uint ackStartSeq = result.Key;
+                    uint ackSeqCount = 1;
+
+                    this.sendAckQueue.TryPeek(out var item);
+                    while (this.SendAckQueueLength() > 0 && item.Key == Session.NextSequenceId(ackStartSeq, (int)ackSeqCount))
                     {
-                        this.sendAckQueue.Dequeue();
+                        this.sendAckQueue.TryDequeue(out _);
                         ackSeqCount++;
                     }
 
                     ackStartSeqList.Add(ackStartSeq);
                     ackSeqCountList.Add(ackSeqCount);
+                }
 
-                    var omitCount = true;
-                    foreach (var c in ackSeqCountList)
+                var omitCount = true;
+                foreach (var c in ackSeqCountList)
+                {
+                    if (c != 1)
                     {
-                        if (c != 1)
-                        {
-                            omitCount = false;
-                            break;
-                        }
+                        omitCount = false;
+                        break;
+                    }
+                }
+
+                if (omitCount)
+                {
+                    ackSeqCountList = null;
+                }
+
+                try
+                {
+                    var packet = new Packet 
+                    {
+                        AckStartSeqs = ackStartSeqList.ToArray(), 
+                        BytesRead = this.session.BytesRead 
+                    };
+
+                    if (ackSeqCountList != null)
+                    {
+                        packet.AckSeqCounts = ackSeqCountList.ToArray();
                     }
 
-                    if (omitCount)
-                    {
-                        ackSeqCountList = null;
-                    }
+                    var buffer = ProtoSerializer.Serialize(packet);
 
-                    try
-                    {
-                        var packet = new Packet { AckStartSeq = ackStartSeqList.ToArray(), BytesRead = this.session.BytesRead };
-                        if (ackSeqCountList != null)
-                        {
-                            packet.AckSeqCount = ackSeqCountList.ToArray();
-                        }
+                    await this.session.SendWithAsync(this.LocalClientId, this.RemoteClientId, buffer);
 
-                        var buffer = ProtoSerializer.Serialize(packet);
-
-                        await this.session.SendWith(this.LocalClientId, this.RemoteClientId, buffer);
-
-                        this.session.BytesReadSentTime = DateTime.Now;
-                    }
-                    catch (Exception e)
-                    {
-                        await Task.Delay(1000);
-                        continue;
-                    }
+                    this.session.BytesReadSentTime = DateTime.Now;
+                }
+                catch (Exception e)
+                {
+                    await Task.Delay(1000);
+                    continue;
                 }
             }
         }
 
-        public async Task CheckTimeout()
+        private async Task CheckTimeoutAsync()
         {
             while (true)
             {
-                var timeout = Util.MakeTimeoutChannel(this.session.Config.CheckTimeoutInterval);
-                var channel = await NcpChannel.SelectChannel(timeout, this.session.Context.Done);
+                var timeout = this.session.Config.CheckTimeoutInterval.ToTimeoutChannel();
+                var cts = new CancellationTokenSource();
+                var channelTasks = new List<Task<Channel<uint?>>>
+                {
+                    timeout.Shift(cts.Token),
+                    this.session.Context.Done.Shift(cts.Token)
+                };
+
+                var channel = await channelTasks.SelectAsync(cts);
 
                 if (channel == this.session.Context.Done)
                 {
                     throw this.session.Context.Error;
                 }
 
-                var threshhold = DateTime.Now.AddSeconds(-this.RetransmissionTimeout);
+                var threshhold = DateTime.Now.AddMilliseconds(-this.RetransmissionTimeout);
 
                 foreach (var item in this.timeSentSeq)
                 {
@@ -279,17 +325,26 @@ namespace Ncp
 
                     if (item.Value < threshhold)
                     {
-                        await this.session.resendChan.Writer.WriteAsync(item.Key);
+                        await this.session.resendChan.Push(item.Key);
+
                         this.resentSeq.Add(item.Key, default);
+
                         this.WindowSize /= 2;
                         if (this.WindowSize < this.session.Config.MinConnectionWindowSize)
                         {
                             this.WindowSize = this.session.Config.MinConnectionWindowSize;
                         }
 
-                        await this.session.resendChan.Writer.WriteAsync(item.Key);
-                        var activeChannel = await NcpChannel.SelectChannel(this.session.resendChan, this.session.Context.Done);
-                        if (activeChannel == this.session.resendChan)
+                        var cts2 = new CancellationTokenSource();
+                        var channelTasks2 = new List<Task<Channel<uint?>>>
+                        {
+                            this.session.resendChan.Push(item.Key, cts.Token),
+                            this.session.Context.Done.Shift(cts.Token)
+                        };
+
+                        var channel2 = await channelTasks2.SelectAsync(cts);
+
+                        if (channel2 == this.session.resendChan)
                         {
                             this.resentSeq.Add(item.Key, default);
                             this.WindowSize /= 2;
@@ -298,7 +353,7 @@ namespace Ncp
                                 this.WindowSize = this.session.Config.MinConnectionWindowSize;
                             }
                         }
-                        else if (activeChannel == this.session.Context.Done)
+                        else if (channel2 == this.session.Context.Done)
                         {
                             throw this.session.Context.Error;
                         }

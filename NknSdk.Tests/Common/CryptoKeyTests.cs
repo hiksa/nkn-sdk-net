@@ -98,11 +98,9 @@ namespace NknSdk.Tests.Common
             var expectedDecryptedPayload = new byte[] { 18, 8, 219, 37, 78, 203, 52, 33, 59, 229, 26, 3, 1, 2, 3 };
 
             var actualSharedKey = key.Decrypt(encryptedKey, nonce.Take(Crypto.NonceLength).ToArray(), sourcePublicKey);
-            Assert.Equal(expectedSharedKey, actualSharedKey);
-
             var actualDecryptedPayload = Crypto.DecryptSymmetric(rawPayload, nonce.Skip(Crypto.NonceLength).ToArray(), actualSharedKey);
-            Console.WriteLine(string.Join(", ", actualDecryptedPayload));
-            Console.WriteLine(string.Join(", ", expectedDecryptedPayload));
+            
+            Assert.Equal(expectedSharedKey, actualSharedKey);
             Assert.Equal(expectedDecryptedPayload, actualDecryptedPayload);
         }
 

@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Linq;
 using System.IO;
 using System.IO.Compression;
+using NknSdk.Common.Exceptions;
 
 namespace NknSdk.Common
 {
@@ -154,7 +155,7 @@ namespace NknSdk.Common
 
             try
             {
-                return Encoding.ASCII.GetString(output);
+                return System.Text.Encoding.ASCII.GetString(output);
             }
             catch (DecoderFallbackException e)
             {
@@ -224,12 +225,29 @@ namespace NknSdk.Common
         public static T[] Concat<T>(this T[] first, T[] second)
             => Enumerable.Concat(first, second).ToArray();
 
+        public static void ThrowIfNull<T>(this T instance, string message = null) where T : class
+        {
+            if (instance == null)
+            {
+                throw new InvalidArgumentException(message);
+            }
+        }
+
+        public static void ThrowIfNullOrEmpty(this string instance, string message = null)
+        {
+            if (string.IsNullOrEmpty(instance))
+            {
+                throw new InvalidArgumentException(message);
+            }
+        }
+
+
         private static byte DivMod58(byte[] number, int startAt)
         {
             int remainder = 0;
             for (int i = startAt; i < number.Length; i++)
             {
-                int digit256 = (int)number[i] & 0xFF;
+                int digit256 = number[i] & 0xFF;
                 int temp = remainder * 256 + digit256;
 
                 number[i] = (byte)(temp / 58);
@@ -245,7 +263,7 @@ namespace NknSdk.Common
             int remainder = 0;
             for (int i = startAt; i < number58.Length; i++)
             {
-                int digit58 = (int)number58[i] & 0xFF;
+                int digit58 = number58[i] & 0xFF;
                 int temp = remainder * 58 + digit58;
 
                 number58[i] = (byte)(temp / 256);

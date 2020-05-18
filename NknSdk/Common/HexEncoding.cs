@@ -1,7 +1,7 @@
 ﻿
 namespace NknSdk.Common
 {
-    public static class Serialization
+    public static class HexEncoding
     {
         public static string EncodeHex(this short value) => value.ToString("X").PadLeft(2, '0');
 

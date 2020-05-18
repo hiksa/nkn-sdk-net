@@ -1,6 +1,6 @@
 ﻿namespace NknSdk.Wallet
 {
-    public class WalletConstants
+    public class Constants
     {
         public const int NameRegistrationFee = 10;
         public const int Version = 1;
@@ -11,7 +11,6 @@
         public const int CheckSumLength = 4;
 
         public const string AddressPrefix = "02b825";
-
         public static readonly int AddressPrefixLength = AddressPrefix.Length / 2;
         public static readonly int AddressLength = AddressPrefixLength + Uint160Length + CheckSumLength;
     }

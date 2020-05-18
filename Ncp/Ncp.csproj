@@ -5,6 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Google.Protobuf" Version="3.11.4" />
     <PackageReference Include="Open.ChannelExtensions" Version="3.3.0" />
     <PackageReference Include="OptimizedPriorityQueue" Version="4.2.0" />
     <PackageReference Include="protobuf-net" Version="2.4.6" />

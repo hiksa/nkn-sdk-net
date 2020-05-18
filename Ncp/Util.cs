@@ -11,44 +11,10 @@ namespace Ncp
 {
     public static class Util
     {
-        public static int NextSequence(int sequenceId, int step)
+        public static Task<Task> MakeTimeoutTask(this Task task, int timeout, Exception error)
         {
-            var max = uint.MaxValue - Constants.MinSequenceId + 1;
-            var result = (sequenceId - Constants.MinSequenceId + step) % max;
-            if (result < 0)
-            {
-                result += max;
-            }
-
-            return (int)result + Constants.MinSequenceId;
-        }
-
-        public static bool IsSequenceInBetween(int start, int end, int target)
-        {
-            if (start <= end)
-            {
-                return target >= start && target < end;
-            }
-
-            return target >= start || target < end;
-        }
-
-        public static Channel<int?> MakeTimeoutChannel(int timeout)
-        {
-            var channel = Channel.CreateUnbounded<int?>();
-            Task.Run(async delegate
-            {
-                await Task.Delay(timeout);
-                await channel.CompleteAsync();
-            });
-
-            return channel;
-        }
-
-        public static async Task<Task> MakeTimeoutTaskAsync(Task task, int timeout)
-        {
-            var currentTaskCancellationTokenSource = new CancellationTokenSource();
-            return await Task.Factory.StartNew(async delegate
+            var mainTaskCancellationTokenSource = new CancellationTokenSource();
+            return Task.Factory.StartNew(async delegate
             {
                 var cancellationTokenSource = new CancellationTokenSource();
                 Task timer;
@@ -56,7 +22,10 @@ namespace Ncp
                 {
                     timer = Task.Run(async delegate {
                         await Task.Delay(timeout);
-                        currentTaskCancellationTokenSource.Cancel();
+
+                        mainTaskCancellationTokenSource.Cancel();
+
+                        throw error;
                     }, cancellationTokenSource.Token);
                 }
 
@@ -65,32 +34,7 @@ namespace Ncp
                     cancellationTokenSource.Cancel();
                 });
 
-            }, currentTaskCancellationTokenSource.Token);
-        }
-
-        public static int CompareSeq(int seq1, int seq2)
-        {
-            if (seq1 == seq2)
-            {
-                return 0;
-            }
-
-            if (seq1 < seq2)
-            {
-                if (seq2 - seq1 < int.MaxValue / 2)
-                {
-                    return -1;
-                }
-
-                return 1;
-            }
-
-            if (seq1 - seq2 < int.MaxValue / 2)
-            {
-                return 1;
-            }
-
-            return -1;
+            }, mainTaskCancellationTokenSource.Token);
         }
     }
 }

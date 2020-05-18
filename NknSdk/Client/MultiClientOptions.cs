@@ -4,7 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text;
 
-namespace NknSdk.MultiClient
+namespace NknSdk.Client
 {
     public class MultiClientOptions : ClientOptions
     {

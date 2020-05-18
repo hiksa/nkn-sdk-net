@@ -3,7 +3,7 @@
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class RegisterName
+    public class RegisterName : ISerializable
     {
         [ProtoMember(1)]
         public byte[] Registrant { get; set; }

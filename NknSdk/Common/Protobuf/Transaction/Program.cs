@@ -3,7 +3,7 @@
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class Program
+    public class Program : ISerializable
     {
         [ProtoMember(1)]
         public byte[] Code { get; set; }

@@ -1,12 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using NSec.Cryptography;
 
 namespace NknSdk.Common
 {
     public class CryptoKeyPair
     {
-        public NSec.Cryptography.Key RealKey { get; set;  }
+        public Key RealKey { get; set;  }
 
         public string PublicKey { get; set; }
 

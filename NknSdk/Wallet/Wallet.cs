@@ -5,6 +5,7 @@ using Utf8Json;
 using NknSdk.Common;
 using NknSdk.Common.Protobuf.Transaction;
 using NknSdk.Common.Rpc;
+using NknSdk.Common.Exceptions;
 
 namespace NknSdk.Wallet
 {
@@ -33,7 +34,7 @@ namespace NknSdk.Wallet
             this.masterKey = Aes.Encrypt(masterKey, passwordHash, iv.FromHexString());
             this.seedEncrypted = Aes.Encrypt(options.SeedHex, masterKey, iv.FromHexString());
 
-            this.version = WalletConstants.Version;
+            this.version = Constants.Version;
         }
 
         public string Seed => this.account.Seed;
@@ -91,7 +92,7 @@ namespace NknSdk.Wallet
             var data = await RpcClient.GetNonceByAddress(options.RpcServer, address);
             if (data.Nonce == null)
             {
-                // TODO: throw
+                throw new InvalidResponseException("nonce is null");
             }
 
             var nonce = data.Nonce.Value;

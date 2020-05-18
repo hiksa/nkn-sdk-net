@@ -1,20 +1,19 @@
 ﻿using Ncp;
-using NknSdk.Client;
 using NknSdk.Client.Model;
 using NknSdk.Common;
-using NSec.Cryptography;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using static NknSdk.Client.Handlers;
 using System.Runtime.Caching;
 using NknSdk.Common.Protobuf.Payloads;
 using System.Text.RegularExpressions;
-using System.Threading;
+using NknSdk.Common.Exceptions;
+using Ncp.Exceptions;
+using NknSdk.Wallet;
 
-namespace NknSdk.MultiClient
+namespace NknSdk.Client
 {
     public class MultiClient
     {
@@ -24,8 +23,8 @@ namespace NknSdk.MultiClient
         public event SessionMessageHandler SessionReceived;
 
         private readonly MultiClientOptions options;
-        private readonly IDictionary<string, Client.Client> clients;
-        private readonly Client.Client defaultClient;
+        private readonly IDictionary<string, Client> clients;
+        private readonly Client defaultClient;
         private readonly CryptoKey key;
         private readonly string identifier;
         private readonly string address;
@@ -42,11 +41,11 @@ namespace NknSdk.MultiClient
         {
             var baseIdentifier = options.Identifier ?? "";
 
-            var clients = new Dictionary<string, Client.Client>();
+            var clients = new Dictionary<string, Client>();
             if (options.OriginalClient)
             {
-                var clientId = Utils.AddIdentifier("", "");
-                clients[clientId] = new Client.Client(options);
+                var clientId = Client.AddIdentifier("", "");
+                clients[clientId] = new Client(options);
 
                 if (string.IsNullOrWhiteSpace(options.Seed))
                 {
@@ -56,9 +55,9 @@ namespace NknSdk.MultiClient
 
             for (int i = 0; i < options.NumberOfSubClients; i++)
             {
-                var clientId = Utils.AddIdentifier("", i.ToString());
-                options.Identifier = Utils.AddIdentifier(baseIdentifier, i.ToString());
-                clients[clientId] = new Client.Client(options);
+                var clientId = Client.AddIdentifier("", i.ToString());
+                options.Identifier = Client.AddIdentifier(baseIdentifier, i.ToString());
+                clients[clientId] = new Client(options);
 
                 clients[clientId].Connected += (object sender, EventArgs args) => this.Connected?.Invoke(this, null);
 
@@ -73,7 +72,7 @@ namespace NknSdk.MultiClient
             var clientIds = clients.Keys.OrderBy(x => x);
             if (clientIds.Count() == 0)
             {
-                throw new Exception();
+                throw new InvalidArgumentException("should have at least one client");
             }
 
             this.options = options;
@@ -82,45 +81,48 @@ namespace NknSdk.MultiClient
             this.key = this.defaultClient.Key;
             this.identifier = baseIdentifier;
             this.address = (string.IsNullOrWhiteSpace(baseIdentifier) ? "" : baseIdentifier + ".") + this.key.PublicKey;
+            
             this.connectListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
             this.messageListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
             this.sessionListeners = new List<Func<Session, Task<object>>>();
-
             this.acceptedAddresses = new List<Regex>();
             this.sessions = new Dictionary<string, Session>();
+            this.messageCache = new MemoryCache("messageCache");
+
             this.isReady = false;
             this.isClosed = false;
-            this.messageCache = new MemoryCache("messageCache");
 
             foreach (var clientId in clientIds)
             {
-                clients[clientId].OnMessage(async request =>
+                clients[clientId].OnMessage(async message =>
                 {
                     if (this.isClosed)
                     {
                         return false;
                     }
 
-                    if (request.PayloadType == PayloadType.Session)
+                    if (message.PayloadType == PayloadType.Session)
                     {
-                        if (!request.IsEncrypted)
+                        if (!message.IsEncrypted)
                         {
                             return false;
                         }
 
                         try
                         {
-                            await this.HandleSessionMessageAsync(clientId, request.Source, request.MessageId, request.Payload); ;
+                            await this.HandleSessionMessageAsync(clientId, message.Source, message.MessageId, message.Payload); ;
                         }
-                        catch (Exception)
+                        catch (AddressNotAllowedException)
                         {
-                            throw new Exception();
+                        }
+                        catch (SessionClosedException)
+                        {
                         }
 
                         return false;
                     }
 
-                    var key = request.MessageId.ToHexString();
+                    var key = message.MessageId.ToHexString();
 
                     if (this.messageCache.Get(key) != null)
                     {
@@ -130,8 +132,8 @@ namespace NknSdk.MultiClient
                     var expiration = DateTime.Now.AddSeconds(options.MessageHoldingSeconds.Value);
                     this.messageCache.Set(key, clientId, expiration);
 
-                    var removeIdentifierResult = Utils.RemoveIdentifier(request.Source);
-                    request.Source = removeIdentifierResult.Address;
+                    var removeIdentifierResult = Client.RemoveIdentifier(message.Source);
+                    message.Source = removeIdentifierResult.Address;
 
                     var responses = Enumerable.Empty<object>();
 
@@ -141,7 +143,7 @@ namespace NknSdk.MultiClient
                         {
                             try
                             {
-                                var result = await func(request);
+                                var result = await func(message);
 
                                 return result;
                             }
@@ -154,7 +156,7 @@ namespace NknSdk.MultiClient
                         responses = await Task.WhenAll(tasks);
                     }
 
-                    if (request.NoReply == false)
+                    if (message.NoReply == false)
                     {
                         var responded = false;
                         foreach (var response in responses)
@@ -171,13 +173,13 @@ namespace NknSdk.MultiClient
                                 if (response is byte[] bytes)
                                 {
                                     await this.Send(
-                                        request.Source,
+                                        message.Source,
                                         bytes,
                                         new SendOptions
                                         {
-                                            IsEncrypted = request.IsEncrypted,
+                                            IsEncrypted = message.IsEncrypted,
                                             HoldingSeconds = 0,
-                                            ReplyToId = request.MessageId.ToHexString()
+                                            ReplyToId = message.MessageId.ToHexString()
                                         });
 
                                     responded = true;
@@ -185,7 +187,7 @@ namespace NknSdk.MultiClient
                                 else if (response is string text)
                                 {
 
-
+                                    // TODO: ..
 
                                     responded = true;
                                 }
@@ -199,9 +201,9 @@ namespace NknSdk.MultiClient
                                 if (this.clients[id].IsReady)
                                 {
                                     this.clients[id].SendAck(
-                                        Utils.AddIdentifierPrefix(request.Source, id),
-                                        request.MessageId,
-                                        request.IsEncrypted);
+                                        Client.AddIdentifierPrefix(message.Source, id),
+                                        message.MessageId,
+                                        message.IsEncrypted);
                                 }
                             }
                         }
@@ -222,10 +224,10 @@ namespace NknSdk.MultiClient
             var readyClientIds = this.GetReadyClientIds();
             if (readyClientIds.Count() == 0)
             {
-                throw new Exception();
+                throw new ClientNotReadyException();
             }
 
-            destination = await this.defaultClient.ProcessDestination(destination);
+            destination = await this.defaultClient.ProcessDestinationAsync(destination);
 
             try
             {
@@ -234,7 +236,7 @@ namespace NknSdk.MultiClient
             }
             catch (Exception)
             {
-                throw new Exception();
+                throw new ApplicationException("failed to send with any client");
             }
         }
 
@@ -247,19 +249,18 @@ namespace NknSdk.MultiClient
             TimeoutHandler timeoutCallback = null)
         {
             var client = this.clients[clientId];
-
             if (client == null)
             {
-                throw new Exception();
+                throw new InvalidArgumentException("no such clientId");
             }
 
             if (client.IsReady == false)
             {
-                throw new Exception();
+                throw new ClientNotReadyException();
             }
 
-            return client.Send(
-                Utils.AddIdentifierPrefix(destination, clientId),
+            return client.SendDataAsync(
+                Client.AddIdentifierPrefix(destination, clientId),
                 data,
                 options,
                 responseCallback,
@@ -276,10 +277,7 @@ namespace NknSdk.MultiClient
             this.sessionListeners.Add(func);
         }
 
-        private IEnumerable<string> GetReadyClientIds()
-            => this.clients.Keys.Where(x => this.clients.ContainsKey(x) && this.clients[x].IsReady);
-
-        private bool ShouldAcceptAddress(string address)
+        private bool IsAcceptedAddress(string address)
         {
             foreach (var item in this.acceptedAddresses)
             {
@@ -294,10 +292,10 @@ namespace NknSdk.MultiClient
 
         private async Task HandleSessionMessageAsync(string clientId, string source, byte[] sessionId, byte[] data)
         {
-            var remote = Utils.RemoveIdentifier(source);
+            var remote = Client.RemoveIdentifier(source);
             var remoteAddress = remote.Address;
             var remoteClientId = remote.ClientId;
-            var sessionKey = Utils.MakeSessionKey(remoteAddress, sessionId.ToHexString());
+            var sessionKey = Session.GetKey(remoteAddress, sessionId.ToHexString());
 
             Session session;
 
@@ -308,9 +306,9 @@ namespace NknSdk.MultiClient
             }
             else
             {
-                if (this.ShouldAcceptAddress(remoteAddress) == false)
+                if (this.IsAcceptedAddress(remoteAddress) == false)
                 {
-                    throw new Exception();
+                    throw new AddressNotAllowedException();
                 }
 
                 session = this.MakeSession(remoteAddress, sessionId.ToHexString(), this.options.SessionConfiguration);
@@ -325,11 +323,11 @@ namespace NknSdk.MultiClient
 
                 if (this.sessionListeners.Count > 0)
                 {
-                    await Task.WhenAll(this.sessionListeners.Select(async x =>
+                    await Task.WhenAll(this.sessionListeners.Select(async func =>
                     {
                         try
                         {
-                            return await x(session);
+                            return await func(session);
                         }
                         catch (Exception)
                         {
@@ -380,13 +378,13 @@ namespace NknSdk.MultiClient
                     var client = this.clients[localClientId];
                     if (client.IsReady == false)
                     {
-                        throw new Exception();
+                        throw new ClientNotReadyException();
                     }
 
                     var payload = MessageFactory.MakeSessionPayload(data, sessionId);
-                    var destination = Utils.AddIdentifierPrefix(remoteAddress, remoteClientId);
+                    var destination = Client.AddIdentifierPrefix(remoteAddress, remoteClientId);
 
-                    await client.Send(destination, payload);
+                    await client.SendPayloadAsync(destination, payload);
                 },
                 configuration);
         }
@@ -405,19 +403,19 @@ namespace NknSdk.MultiClient
         {
             if (addresses == null)
             {
-                addresses = new Regex[] { MultiClientConstants.DefaultSessionAllowedAddressRegex };
+                addresses = new Regex[] { Constants.DefaultSessionAllowedAddressRegex };
             }
 
             this.acceptedAddresses = addresses;
         }
 
-        public async Task<Session> Dial(string remoteAddress, SessionConfiguration sessionConfiguration)
+        public async Task<Session> DialAsync(string remoteAddress, SessionConfiguration sessionConfiguration)
         {
-            var dialTimeout = Constants.DefaultInitialRetransmissionTimeout;
+            var dialTimeout = Ncp.Constants.DefaultInitialRetransmissionTimeout;
 
-            var sessionId = PseudoRandom.RandomBytesAsHexString(MultiClientConstants.SessionIdSize);
+            var sessionId = PseudoRandom.RandomBytesAsHexString(Constants.SessionIdSize);
 
-            var sessionKey = Utils.MakeSessionKey(remoteAddress, sessionId);
+            var sessionKey = Session.GetKey(remoteAddress, sessionId);
 
             var session = this.MakeSession(remoteAddress, sessionId, sessionConfiguration);
 
@@ -427,5 +425,8 @@ namespace NknSdk.MultiClient
 
             return session;
         }
+
+        private IEnumerable<string> GetReadyClientIds()
+            => this.clients.Keys.Where(x => this.clients.ContainsKey(x) && this.clients[x].IsReady);
     }
 }

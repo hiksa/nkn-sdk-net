@@ -19,6 +19,7 @@ using static NknSdk.Client.Handlers;
 using System.ComponentModel.Design.Serialization;
 using System.Security.Cryptography;
 using Microsoft.VisualBasic;
+using NknSdk.Common.Exceptions;
 
 namespace NknSdk.Client
 {
@@ -39,7 +40,7 @@ namespace NknSdk.Client
         public string signatureChainBlockHash;
         private bool shouldReconnect;
         private int reconnectInterval;
-        private ResponseManager responseManager;
+        private ClientResponseManager responseManager;
         private WebSocket webSocket;
         private GetWsAddressResult remoteNode;
         private bool isClosed;
@@ -62,21 +63,68 @@ namespace NknSdk.Client
             this.messageListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
             this.address = address;
             this.reconnectInterval = options.ReconnectIntervalMin ?? 0;
-            this.responseManager = new ResponseManager();
+            this.responseManager = new ClientResponseManager();
 
             this.ConnectAsync().GetAwaiter().GetResult();
         }
+
         public bool IsReady { get; private set; }
 
         public CryptoKey Key => this.key;
 
         public GetWsAddressResult RemoteNode => this.remoteNode;
 
-        public string GetSeed() => this.key.Seed;
+        public string Seed => this.key.Seed;
 
-        public string GetPublicKey() => this.key.PublicKey;
+        public string PublicKey => this.key.PublicKey;
 
-        public async Task<byte[]> Send(
+        public static string AddressToId(string address) => Crypto.Sha256(address);
+
+        public static string AddressToPublicKey(string address)
+            => address
+                .Split(new char[] { '.' })
+                .LastOrDefault();
+
+        public static string AddIdentifier(string address, string identifier)
+        {
+            if (identifier == "")
+            {
+                return address;
+            }
+
+            return AddIdentifierPrefix(address, "__" + identifier + "__");
+        }
+
+        public static string AddIdentifierPrefix(string identifier, string prefix)
+        {
+            if (identifier == "")
+            {
+                return "" + prefix;
+            }
+
+            if (prefix == "")
+            {
+                return "" + identifier;
+            }
+
+            return prefix + "." + identifier;
+        }
+
+        public static (string Address, string ClientId) RemoveIdentifier(string source)
+        {
+            var parts = source.Split('.');
+            if (Constants.MultiClientIdentifierRegex.IsMatch(parts[0]))
+            {
+                var address = string.Join(".", parts.Skip(1));
+                return (address, parts[0]);
+            }
+
+            return (source, "");
+        }
+
+        public void OnMessage(Func<MessageHandlerRequest, Task<object>> func) => this.messageListeners.Add(func);
+
+        public async Task<byte[]> SendDataAsync(
             IList<string> destinations, 
             byte[] data, 
             SendOptions options,
@@ -85,39 +133,34 @@ namespace NknSdk.Client
         {
             var payload = MessageFactory.MakeBinaryPayload(data, options.ReplyToId, options.MessageId);
 
-            var messageId = await this.Send(destinations, payload, options.IsEncrypted.Value);
+            var messageId = await this.SendPayloadAsync(destinations, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseCallback != null)
             {
-                this.responseManager.Add(new ResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
+                this.responseManager.Add(new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
             }
 
             return messageId;
         }
 
-        public void OnMessage(Func<MessageHandlerRequest, Task<object>> func)
-        {
-            this.messageListeners.Add(func);
-        }
-
-        public async Task<byte[]> Send(
+        public async Task<byte[]> SendTextAsync(
             IList<string> destinations, 
-            string data, 
+            string text, 
             SendOptions options,
             ResponseHandler responseCallback = null,
             TimeoutHandler timeoutCallback = null)
         {
-            var payload = MessageFactory.MakeTextPayload(data, options.ReplyToId, options.MessageId);
+            var payload = MessageFactory.MakeTextPayload(text, options.ReplyToId, options.MessageId);
 
-            var messageId = await this.Send(destinations, payload, options.IsEncrypted.Value);
+            var messageId = await this.SendPayloadAsync(destinations, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseCallback != null)
             {
-                this.responseManager.Add(new ResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
+                this.responseManager.Add(new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
             }
 
             return messageId;
         }
 
-        public async Task<byte[]> Send(
+        public async Task<byte[]> SendDataAsync(
             string destination, 
             byte[] data, 
             SendOptions options,
@@ -126,17 +169,17 @@ namespace NknSdk.Client
         {
             var payload = MessageFactory.MakeBinaryPayload(data, options.ReplyToId, options.MessageId);
 
-            var messageId = await this.Send(destination, payload, options.IsEncrypted.Value);
+            var messageId = await this.SendPayloadAsync(destination, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseCallback != null)
             {
-                var responseProcessor = new ResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback);
+                var responseProcessor = new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback);
                 this.responseManager.Add(responseProcessor);
             }
 
             return messageId;
         }
 
-        public async Task<byte[]> Send(
+        public async Task<byte[]> SendTextAsync(
             string destination, 
             string data, 
             SendOptions options,
@@ -145,31 +188,31 @@ namespace NknSdk.Client
         {
             var payload = MessageFactory.MakeTextPayload(data, options.ReplyToId, options.MessageId);
 
-            var messageId = await this.Send(destination, payload, options.IsEncrypted.Value);
+            var messageId = await this.SendPayloadAsync(destination, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseCallback != null)
             {
-                this.responseManager.Add(new ResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
+                this.responseManager.Add(new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
             }
 
             return messageId;
         }
 
-        public async Task<byte[]> Send(
+        public async Task<byte[]> SendPayloadAsync(
             string destination,
             Payload payload,
             bool isEncrypted = true,
             uint maxHoldingSeconds = 0)
         {
-            var dest = await this.ProcessDestination(destination);
+            var dest = await this.ProcessDestinationAsync(destination);
 
             var message = this.MakeMessageFromPayload(payload, isEncrypted, dest);
 
             var serializedMessage = message.ToBytes();
 
             var size = serializedMessage.Length + dest.Length + Crypto.SignatureLength;
-            if (size > ClientConstants.MaxClientMessageSize)
+            if (size > Constants.MaxClientMessageSize)
             {
-                // TODO: throw
+                throw new DataSizeTooLargeException($"encoded message is greater than {Constants.MaxClientMessageSize} bytes");
             }
 
             var outboundMessage = MessageFactory.MakeOutboundMessage(
@@ -185,7 +228,7 @@ namespace NknSdk.Client
             return payload.MessageId;
         }
 
-        public async Task<byte[]> Send(
+        public async Task<byte[]> SendPayloadAsync(
             IList<string> destinations, 
             Payload payload, 
             bool isEncrypted = true, 
@@ -197,10 +240,10 @@ namespace NknSdk.Client
             }
             else if (destinations.Count == 1)
             {
-                return await this.Send(destinations[0], payload, isEncrypted, maxHoldingSeconds);
+                return await this.SendPayloadAsync(destinations[0], payload, isEncrypted, maxHoldingSeconds);
             }
 
-            var dests = await this.ProcessDestinations(destinations);
+            var dests = await this.ProcessDestinationsAsync(destinations);
             var messagesBytes = dests.Select(d => this.MakeMessageFromPayload(payload, isEncrypted, d).ToBytes()).ToList();
 
             var size = 0;
@@ -213,12 +256,12 @@ namespace NknSdk.Client
             for (int i = 0; i < messagesBytes.Count; i++)
             {
                 size = messagesBytes[i].Length + dests[i].Length + Crypto.SignatureLength;
-                if (size > ClientConstants.MaxClientMessageSize)
+                if (size > Constants.MaxClientMessageSize)
                 {
-                    // TODO: throw
+                    throw new DataSizeTooLargeException($"encoded message is greater than {Constants.MaxClientMessageSize} bytes");
                 }
 
-                if (totalSize + size > ClientConstants.MaxClientMessageSize)
+                if (totalSize + size > Constants.MaxClientMessageSize)
                 {
                     outboundMessage = MessageFactory.MakeOutboundMessage(
                         this,
@@ -310,7 +353,7 @@ namespace NknSdk.Client
         {
             if (this.webSocket == null)
             {
-                // TODO: throw not ready
+                throw new ClientNotReadyException();
             }
 
             this.webSocket.Send(data, 0, data.Length);
@@ -318,7 +361,7 @@ namespace NknSdk.Client
 
         private MessagePayload EncryptPayload(byte[] payload, string dest)
         {
-            var publicKey = MessageFactory.AddressToPublicKey(dest);
+            var publicKey = Client.AddressToPublicKey(dest);
             var encrypted = this.key.Encrypt(payload, publicKey);
             var message = MessageFactory.MakeMessage(encrypted.Message, true, encrypted.Nonce);
             return message;
@@ -335,45 +378,50 @@ namespace NknSdk.Client
             return MessageFactory.MakeMessage(serializedPayload, false);
         }
 
-        public async Task<IList<string>> ProcessDestinations(IList<string> destinations)
+        public async Task<IList<string>> ProcessDestinationsAsync(IList<string> destinations)
         {
             if (destinations.Count == 0)
             {
-                throw new ArgumentException("", nameof(destinations));
+                throw new InvalidDestinationException("no destinations");
             }
 
-            var tasks = destinations.Select(this.ProcessDestination).ToArray();
+            var tasks = destinations.Select(this.ProcessDestinationAsync).ToArray();
 
             var result = (await Task.WhenAll(tasks)).Where(x => x.Length > 0).ToList();
+
+            if (result.Count == 0)
+            {
+                throw new InvalidDestinationException("all destinations are invalid");
+            }
 
             return result;
         }
 
-        public async Task<string> ProcessDestination(string destination)
+        public async Task<string> ProcessDestinationAsync(string destination)
         {
             if (destination.Length == 0)
             {
-                throw new Exception();
+                throw new InvalidDestinationException("destination is empty");
             }
 
             var address = destination.Split('.');
             if (address[address.Length - 1].Length < Crypto.PublicKeyLength * 2)
             {
-                var response = await this.GetRegistrant(address[address.Length - 1]);
+                var response = await this.GetRegistrantAsync(address[address.Length - 1]);
                 if (response.Registrant != null && response.Registrant.Length > 0)
                 {
                     address[address.Length - 1] = response.Registrant;
                 }
                 else
                 {
-                    throw new Exception();
+                    throw new InvalidDestinationException(destination + " is neither a valid public key nor a registered name");
                 }
             }
 
             return string.Join(".", address);
         }
 
-        private async Task<GetRegistrantResult> GetRegistrant(string name)
+        private async Task<GetRegistrantResult> GetRegistrantAsync(string name)
         {
             return await RpcClient.GetRegistrant(this.options.RpcServerAddress, name);
         }
@@ -461,13 +509,13 @@ namespace NknSdk.Client
                         this.signatureChainBlockHash = signatureBlockHashMessage.Result;
                         break;
 
-                    default: throw new Exception("");
+                    default: break;
                 }
             };
 
             this.webSocket.DataReceived += (object sender, DataReceivedEventArgs e) =>
             {
-                var clientMessage = e.Data.BytesTo<ClientMessage>();
+                var clientMessage = e.Data.FromBytes<ClientMessage>();
                 switch (clientMessage.Type)
                 {
                     case ClientMessageType.InboundMessage:
@@ -490,7 +538,7 @@ namespace NknSdk.Client
 
         private async Task<bool> HandleInboundMessageAsync(byte[] data)
         {
-            var inboundMessage = data.BytesTo<InboundMessage>();
+            var inboundMessage = data.FromBytes<InboundMessage>();
             if (inboundMessage.PreviousSignature?.Length > 0)
             {
                 var previousSignatureHex = inboundMessage.PreviousSignature.ToHexString();
@@ -596,7 +644,7 @@ namespace NknSdk.Client
                     {
                         if (response is byte[] bytes)
                         {
-                            await this.Send(inboundMessage.Source, bytes, new SendOptions
+                            await this.SendDataAsync(inboundMessage.Source, bytes, new SendOptions
                             {
                                 IsEncrypted = messagePayload.IsEncrypted,
                                 ReplyToId = payload.MessageId.ToHexString()
@@ -608,7 +656,7 @@ namespace NknSdk.Client
                         }
                         else if (response is string text)
                         {
-                            await this.Send(inboundMessage.Source, text, new SendOptions
+                            await this.SendTextAsync(inboundMessage.Source, text, new SendOptions
                             {
                                 IsEncrypted = messagePayload.IsEncrypted,
                                 ReplyToId = payload.MessageId.ToHexString()
@@ -665,7 +713,7 @@ namespace NknSdk.Client
         private byte[] DecryptPayload(MessagePayload message, string source)
         {
             var rawPayload = message.Payload;
-            var sourcePublicKey = MessageFactory.AddressToPublicKey(source);
+            var sourcePublicKey = Client.AddressToPublicKey(source);
             var nonce = message.Nonce;
             var encryptedKey = message.EncryptedKey;
 
@@ -674,32 +722,32 @@ namespace NknSdk.Client
             {
                 if (nonce.Length != Crypto.NonceLength * 2)
                 {
-                    throw new ArgumentException();
+                    throw new DecryptionException("invalid nonce length");
                 }
 
                 var sharedKey = this.key.Decrypt(encryptedKey, nonce.Take(Crypto.NonceLength).ToArray(), sourcePublicKey);
                 if (sharedKey == null)
                 {
-                    throw new ArgumentException();
+                    throw new DecryptionException("decrypt shared key failed");
                 }
 
                 decryptedPayload = Crypto.DecryptSymmetric(rawPayload, nonce.Skip(Crypto.NonceLength).ToArray(), sharedKey);
                 if (decryptedPayload == null)
                 {
-                    throw new ArgumentException();
+                    throw new DecryptionException("decrypt message failed");
                 }
             }
             else 
             {
                 if (nonce.Length != Crypto.NonceLength)
                 {
-                    throw new ArgumentException();
+                    throw new DecryptionException("invalid nonce length");
                 }
 
                 decryptedPayload = this.Key.Decrypt(rawPayload, nonce, sourcePublicKey);
                 if (decryptedPayload == null)
                 {
-                    throw new ArgumentException();
+                    throw new DecryptionException("decrypt message failed");
                 }
             }
 

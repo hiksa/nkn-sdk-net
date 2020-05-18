@@ -6,7 +6,7 @@ using System.Text;
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class UnsignedTransaction
+    public class UnsignedTransaction : ISerializable
     {
         [ProtoMember(1)]
         public Payload Payload { get; set; }

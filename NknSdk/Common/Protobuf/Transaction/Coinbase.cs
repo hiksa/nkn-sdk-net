@@ -3,7 +3,7 @@
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class Coinbase
+    public class Coinbase : ISerializable
     {
         [ProtoMember(1)]
         public byte[] Sender { get; set; }

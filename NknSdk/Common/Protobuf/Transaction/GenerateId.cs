@@ -3,7 +3,7 @@
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class GenerateId
+    public class GenerateId : ISerializable
     {
         [ProtoMember(1)]
         public byte[] PublicKey { get; set; }

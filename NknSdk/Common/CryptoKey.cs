@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text;
+using NknSdk.Common.Exceptions;
 using NknSdk.Common.Protobuf.Payloads;
 using NSec;
 using NSec.Cryptography;
@@ -13,7 +14,7 @@ namespace NknSdk.Common
         private readonly byte[] privateKey;
         private byte[] curvePrivateKey;
         private IDictionary<string, byte[]> SharedKeyCache;
-        private NSec.Cryptography.Key realKey;
+        private Key realKey;
 
         public CryptoKey()
             : this(PseudoRandom.RandomBytes(Crypto.SeedLength))
@@ -27,7 +28,22 @@ namespace NknSdk.Common
 
         public CryptoKey(byte[] seed)
         {
-            this.Seed = seed.ToHexString();
+            if (seed != null)
+            {
+                try
+                {
+                    this.Seed = seed.ToHexString();
+                }
+                catch (Exception)
+                {
+                    throw new InvalidArgumentException("seed is not a valid hex string");
+                }
+            }
+            else
+            {
+                this.Seed = PseudoRandom.RandomBytesAsHexString(Crypto.SeedLength);
+            }
+
             this.SharedKeyCache = new Dictionary<string, byte[]>();
 
             var keyPair = Crypto.MakeKeyPair(seed);

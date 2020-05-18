@@ -4,21 +4,21 @@ using static NknSdk.Client.Handlers;
 
 namespace NknSdk.Client
 {
-    public class ResponseProcessor
+    public class ClientResponseProcessor
     {
         private readonly DateTime? deadline;
 
         private readonly ResponseHandler responseHandler;
         private readonly TimeoutHandler timeoutHandler;
 
-        public ResponseProcessor(
+        public ClientResponseProcessor(
             byte[] messageId,
             int? timeout,
             ResponseHandler responseHandler,
             TimeoutHandler timeoutHandler)
             : this(messageId.ToHexString(), timeout, responseHandler, timeoutHandler) { }
 
-        public ResponseProcessor(
+        public ClientResponseProcessor(
             string messageId, 
             int? timeout, 
             ResponseHandler responseHandler, 

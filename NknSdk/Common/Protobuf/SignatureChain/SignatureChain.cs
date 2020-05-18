@@ -4,7 +4,7 @@ using ProtoBuf;
 namespace NknSdk.Common.Protobuf.SignatureChain
 {
     [ProtoContract]
-    public class SignatureChain
+    public class SignatureChain : ISerializable
     {
         [ProtoMember(1)]
         public uint Nonce { get; set; }

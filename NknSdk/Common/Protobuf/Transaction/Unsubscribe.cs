@@ -6,7 +6,7 @@ using System.Text;
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class Unsubscribe
+    public class Unsubscribe : ISerializable
     {
         [ProtoMember(1)]
         public byte[] Subscriber { get; set; }

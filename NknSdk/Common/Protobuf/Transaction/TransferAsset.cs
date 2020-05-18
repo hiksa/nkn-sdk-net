@@ -5,7 +5,7 @@ namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
     [Serializable]
-    public class TransferAsset
+    public class TransferAsset : ISerializable
     {
         [ProtoMember(1)]
         public byte[] Sender { get; set; }

@@ -7,77 +7,73 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading.Tasks;
 using System.Threading.Channels;
+using System.Threading;
+using Ncp.Exceptions;
 
 namespace Ncp
 {
     public class Context
     {
-        private Channel<int?> cancelChannel;
+        private Channel<uint?> cancelChannel;
         private Task timeoutTask;
         private Exception error;
 
         private Context(Context parent = null, bool cancel = false, int timeout = 0)
         {
-            this.Done = Channel.CreateBounded<int?>(1);
+            this.Done = Channel.CreateBounded<uint?>(1);
 
-            Channel<int?> parentChan = null;
-            Channel<int?> timeoutChan = null;
-            var channels = new List<Channel<int?>>();
+            Channel<uint?> parentChan = null;
+            Channel<uint?> timeoutChan = null;
+            var tasks = new List<Task<Channel<uint?>>>();
+            var cts = new CancellationTokenSource();
 
             if (parent != null)
             {
                 parentChan = parent.Done;
-                channels.Add(parentChan);
+                tasks.Add(parentChan.Shift(cts.Token));
             }
 
             if (cancel)
             {
-                this.cancelChannel = Channel.CreateBounded<int?>(1);
-                channels.Add(this.cancelChannel);
+                this.cancelChannel = Channel.CreateBounded<uint?>(1);
+                tasks.Add(this.cancelChannel.Shift(cts.Token));
             }
 
             if (timeout > 0)
             {
-                timeoutChan = Channel.CreateBounded<int?>(1);
-                channels.Add(timeoutChan);
-
-                this.timeoutTask = Task.Run(async delegate
-                {
-                    await Task.Delay(timeout);
-                    await timeoutChan.CompleteAsync();
-                });
+                timeoutChan = timeout.ToTimeoutChannel();
+                tasks.Add(timeoutChan.Shift(cts.Token));
             }
 
-            if (channels.Count > 0)
+            if (tasks.Count > 0)
             {
-                NcpChannel.SelectChannel(channels).ContinueWith(async x =>
-                {
-                    var channel = await x;
-
-                    Exception ex = null;
-                    if (channel == parentChan)
+                tasks
+                    .SelectAsync(cts)
+                    .ContinueWith(async task =>
                     {
-                        ex = parent.Error;
-                    }
-                    else if (channel == this.cancelChannel)
-                    {
-                        throw new Exception();
-                    }
-                    else if (channel == timeoutChan)
-                    {
-                        throw new Exception();
-                    }
+                        var channel = await task;
+                        if (channel == parentChan)
+                        {
+                            this.error = parent.Error;
+                        }
+                        else if (channel == this.cancelChannel)
+                        {
+                            this.error = new ContextCanceledException();
+                        }
+                        else if (channel == timeoutChan)
+                        {
+                            this.error = new ContextExpiredException();
+                        }
 
-                    this.error = ex;
+                        await this.Done.CompleteAsync();
+                        await this.CancelAsync();
 
-                    await this.Done.CompleteAsync();
-                    await this.CancelAsync();
-                    this.timeoutTask.Dispose();
-                });
+                        this.timeoutTask.Dispose();
+                    });
             }
         }
 
-        public Channel<int?> Done { get; }
+        public Channel<uint?> Done { get; }
 
         public Exception Error => this.error;
 

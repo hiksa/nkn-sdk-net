@@ -3,7 +3,7 @@
 namespace NknSdk.Common.Protobuf.Transaction
 {
     [ProtoContract]
-    public class Payload
+    public class Payload : ISerializable
     {
         [ProtoMember(1)]
         public PayloadType Type { get; set; }
