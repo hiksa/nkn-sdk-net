@@ -23,7 +23,7 @@ namespace NknSdk.Client
         public event SessionMessageHandler SessionReceived;
 
         private readonly MultiClientOptions options;
-        private readonly IDictionary<string, Client> clients;
+        public readonly IDictionary<string, Client> clients;
         private readonly Client defaultClient;
         private readonly CryptoKey key;
         private readonly string identifier;
@@ -59,7 +59,10 @@ namespace NknSdk.Client
                 options.Identifier = Client.AddIdentifier(baseIdentifier, i.ToString());
                 clients[clientId] = new Client(options);
 
-                clients[clientId].Connected += (object sender, EventArgs args) => this.Connected?.Invoke(this, null);
+                clients[clientId].Connected += (object sender, EventArgs e) =>
+                {
+                    this.Connected?.Invoke(this, null);
+                };
 
                 if (i == 0 && string.IsNullOrWhiteSpace(options.Seed))
                 {
@@ -110,7 +113,7 @@ namespace NknSdk.Client
 
                         try
                         {
-                            await this.HandleSessionMessageAsync(clientId, message.Source, message.MessageId, message.Payload); ;
+                            await this.HandleSessionMessageAsync(clientId, message.Source, message.MessageId, message.Payload);
                         }
                         catch (AddressNotAllowedException)
                         {
@@ -232,7 +235,8 @@ namespace NknSdk.Client
             try
             {
                 var tasks = readyClientIds.Select(x => this.SendWithClient(x, destination, data, options, responseCallback, timeoutCallback));
-                return await Task.WhenAny(tasks);
+                var result = await Task.WhenAny(tasks);
+                return result;
             }
             catch (Exception)
             {
@@ -354,7 +358,7 @@ namespace NknSdk.Client
             {
                 try
                 {
-                    await this.clients[clientId].CloseAsync();
+                    this.clients[clientId].Close();
                 }
                 catch (Exception)
                 {
@@ -414,10 +418,11 @@ namespace NknSdk.Client
             var dialTimeout = Ncp.Constants.DefaultInitialRetransmissionTimeout;
 
             var sessionId = PseudoRandom.RandomBytesAsHexString(Constants.SessionIdSize);
-
-            var sessionKey = Session.GetKey(remoteAddress, sessionId);
+            //var sessionId = new byte[] { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 }.ToHexString();
 
             var session = this.MakeSession(remoteAddress, sessionId, sessionConfiguration);
+
+            var sessionKey = Session.GetKey(remoteAddress, sessionId);
 
             this.sessions.Add(sessionKey, session);
 

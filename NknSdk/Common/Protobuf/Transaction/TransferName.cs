@@ -11,10 +11,10 @@ namespace NknSdk.Common.Protobuf.Transaction
         [ProtoMember(1)]
         public string Name { get; set; }
 
-        [ProtoMember(2)]
+        [ProtoMember(2, IsPacked = true)]
         public byte[] Registrant { get; set; }
 
-        [ProtoMember(3)]
+        [ProtoMember(3, IsPacked = true)]
         public byte[] Recipient { get; set; }
     }
 }

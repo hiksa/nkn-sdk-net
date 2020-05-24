@@ -4,8 +4,9 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
-using WebSocket4Net;
+//using WebSocket4Net;
 using Utf8Json;
+using WebSocketSharp;
 
 using NknSdk.Client.Model;
 using NknSdk.Common;
@@ -65,7 +66,7 @@ namespace NknSdk.Client
             this.reconnectInterval = options.ReconnectIntervalMin ?? 0;
             this.responseManager = new ClientResponseManager();
 
-            this.ConnectAsync().GetAwaiter().GetResult();
+            this.ConnectAsync();
         }
 
         public bool IsReady { get; private set; }
@@ -221,9 +222,9 @@ namespace NknSdk.Client
                 new byte[][] { serializedMessage },
                 maxHoldingSeconds);
 
-            var serializedOutboundMessage = outboundMessage.ToBytes();
+            var data = outboundMessage.ToBytes();
 
-            this.WsSend(serializedOutboundMessage);
+            this.WsSend(data);
 
             return payload.MessageId;
         }
@@ -297,7 +298,7 @@ namespace NknSdk.Client
             return payload.MessageId;
         }
 
-        public async Task CloseAsync()
+        public void Close()
         {
             this.responseManager.Stop();
             this.shouldReconnect = false;
@@ -306,7 +307,7 @@ namespace NknSdk.Client
             {
                 if (this.webSocket != null)
                 {
-                    await this.webSocket.CloseAsync();
+                    this.webSocket.Close();
                 }
             }
             catch (Exception)
@@ -356,7 +357,7 @@ namespace NknSdk.Client
                 throw new ClientNotReadyException();
             }
 
-            this.webSocket.Send(data, 0, data.Length);
+            this.webSocket.Send(data);
         }
 
         private MessagePayload EncryptPayload(byte[] payload, string dest)
@@ -367,7 +368,7 @@ namespace NknSdk.Client
             return message;
         }
 
-        private MessagePayload MakeMessageFromPayload(Payload payload, bool isEcrypted, string dest)
+        public MessagePayload MakeMessageFromPayload(Payload payload, bool isEcrypted, string dest)
         {
             var serializedPayload = payload.ToBytes();
             if (isEcrypted)
@@ -404,13 +405,13 @@ namespace NknSdk.Client
                 throw new InvalidDestinationException("destination is empty");
             }
 
-            var address = destination.Split('.');
-            if (address[address.Length - 1].Length < Crypto.PublicKeyLength * 2)
+            var destinationParts = destination.Split('.');
+            if (destinationParts[destinationParts.Length - 1].Length < Crypto.PublicKeyLength * 2)
             {
-                var response = await this.GetRegistrantAsync(address[address.Length - 1]);
+                var response = await this.GetRegistrantAsync(destinationParts[destinationParts.Length - 1]);
                 if (response.Registrant != null && response.Registrant.Length > 0)
                 {
-                    address[address.Length - 1] = response.Registrant;
+                    destinationParts[destinationParts.Length - 1] = response.Registrant;
                 }
                 else
                 {
@@ -418,7 +419,7 @@ namespace NknSdk.Client
                 }
             }
 
-            return string.Join(".", address);
+            return string.Join(".", destinationParts);
         }
 
         private async Task<GetRegistrantResult> GetRegistrantAsync(string name)
@@ -458,11 +459,11 @@ namespace NknSdk.Client
 
             if (this.webSocket != null)
             {
-                this.webSocket.Closed -= OnWebSocketClosed;
+                this.webSocket.OnClose -= OnWebSocketClosed;
 
                 try
                 {
-                    await this.webSocket.CloseAsync();
+                    this.webSocket.Close();
                 }
                 catch (Exception)
                 {
@@ -472,7 +473,7 @@ namespace NknSdk.Client
             this.webSocket = ws;
             this.remoteNode = remoteNode;
 
-            this.webSocket.Opened += (object sender, EventArgs e) =>
+            this.webSocket.OnOpen += (object sender, EventArgs e) =>
             {
                 var message = JsonSerializer.ToJsonString(new { Action = "setClient", Addr = this.address });
                 this.webSocket.Send(message);
@@ -481,9 +482,25 @@ namespace NknSdk.Client
                 this.reconnectInterval = this.options.ReconnectIntervalMin ?? 0;
             };
 
-            this.webSocket.MessageReceived += (object sender, MessageReceivedEventArgs e) =>
+            this.webSocket.OnMessage += (object sender, MessageEventArgs e) =>
             {
-                var message = JsonSerializer.Deserialize<Message>(e.Message);
+                if (e.Data[0] != '{')
+                {
+                    var clientMessage = e.RawData.FromBytes<ClientMessage>();
+                    switch (clientMessage.Type)
+                    {
+                        case ClientMessageType.InboundMessage:
+                            this.HandleInboundMessageAsync(clientMessage.Message).GetAwaiter().GetResult();
+                            break;
+                        default:
+                            break;
+                    }
+
+                    return;
+                }
+
+                var message = JsonSerializer.Deserialize<Message>(e.Data);
+
                 if (message.HasError)
                 {
                     Console.WriteLine(message.Error);
@@ -493,7 +510,7 @@ namespace NknSdk.Client
                 switch (message.Action)
                 {
                     case "setClient":                        
-                        var setClientMessage = JsonSerializer.Deserialize<SetClientMessage>(e.Message);
+                        var setClientMessage = JsonSerializer.Deserialize<SetClientMessage>(e.Data);
                         this.signatureChainBlockHash = setClientMessage.Result.SigChainBlockHash;
                         if (this.IsReady == false)
                         {
@@ -505,7 +522,7 @@ namespace NknSdk.Client
                         break;
 
                     case "updateSigChainBlockHash":
-                        var signatureBlockHashMessage = JsonSerializer.Deserialize<UpdateSigChainBlockHashMessage>(e.Message);
+                        var signatureBlockHashMessage = JsonSerializer.Deserialize<UpdateSigChainBlockHashMessage>(e.Data);
                         this.signatureChainBlockHash = signatureBlockHashMessage.Result;
                         break;
 
@@ -513,27 +530,28 @@ namespace NknSdk.Client
                 }
             };
 
-            this.webSocket.DataReceived += (object sender, DataReceivedEventArgs e) =>
+            //this.webSocket.DataReceived += (object sender, DataReceivedEventArgs e) =>
+            //{
+            //    var clientMessage = e.Data.FromBytes<ClientMessage>();
+            //    switch (clientMessage.Type)
+            //    {
+            //        case ClientMessageType.InboundMessage:
+            //            this.HandleInboundMessageAsync(clientMessage.Message).GetAwaiter().GetResult();
+            //            break;
+            //        default:
+            //            break;
+            //    }
+            //};
+
+            this.webSocket.OnClose += OnWebSocketClosed;
+
+            this.webSocket.OnError += (object sender, ErrorEventArgs e) =>
             {
-                var clientMessage = e.Data.FromBytes<ClientMessage>();
-                switch (clientMessage.Type)
-                {
-                    case ClientMessageType.InboundMessage:
-                        this.HandleInboundMessageAsync(clientMessage.Message).GetAwaiter().GetResult();
-                        break;
-                    default:
-                        break;
-                }
+                //Console.WriteLine("[Socket Error] " + e.Exception.Message);
+                Console.WriteLine("[Socket Error] " + e.Message);
             };
 
-            this.webSocket.Closed += OnWebSocketClosed;
-
-            this.webSocket.Error += (object sender, SuperSocket.ClientEngine.ErrorEventArgs e) =>
-            {
-                Console.WriteLine("[Socket Error] " + e.Exception.Message);
-            };
-
-            var opened = await this.webSocket.OpenAsync();
+            this.webSocket.Connect();
         }
 
         private async Task<bool> HandleInboundMessageAsync(byte[] data)

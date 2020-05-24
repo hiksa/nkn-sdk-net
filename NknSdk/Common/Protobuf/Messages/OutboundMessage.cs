@@ -11,11 +11,11 @@ namespace NknSdk.Common.Protobuf.Messages
         [ProtoMember(1)]
         public string Destination { get; set; }
 
-        [ProtoMember(2)]
+        [ProtoMember(2, IsPacked = true)]
         public byte[] Payload { get; set; }
 
         [ProtoMember(3)]
-        public IList<string> Destinations { get; set; }
+        public string[] Destinations { get; set; }
 
         [ProtoMember(4)]
         public uint MaxHoldingSeconds { get; set; }
@@ -23,13 +23,13 @@ namespace NknSdk.Common.Protobuf.Messages
         [ProtoMember(5)]
         public uint Nonce { get; set; }
 
-        [ProtoMember(6)]
+        [ProtoMember(6, IsPacked = true)]
         public byte[] BlockHash { get; set; }
 
         [ProtoMember(7)]
-        public IList<byte[]> Signatures { get; set; }
+        public byte[][] Signatures { get; set; }
 
         [ProtoMember(8)]
-        public IList<byte[]> Payloads { get; set; }
+        public byte[][] Payloads { get; set; }
     }
 }

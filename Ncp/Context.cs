@@ -1,22 +1,19 @@
-﻿using Open.ChannelExtensions;
-using System;
-using System.Linq;
-using System.Linq.Expressions;
-
+﻿using System;
 using System.Collections.Generic;
-using System.Text;
 using System.Threading.Tasks;
 using System.Threading.Channels;
 using System.Threading;
+
+using Open.ChannelExtensions;
+
 using Ncp.Exceptions;
 
 namespace Ncp
 {
     public class Context
     {
-        private Channel<uint?> cancelChannel;
-        private Task timeoutTask;
-        private Exception error;
+        private readonly Channel<uint?> cancelChannel;
+        private readonly Task timeoutTask;
 
         private Context(Context parent = null, bool cancel = false, int timeout = 0)
         {
@@ -54,15 +51,15 @@ namespace Ncp
                         var channel = await task;
                         if (channel == parentChan)
                         {
-                            this.error = parent.Error;
+                            this.Error = parent.Error;
                         }
                         else if (channel == this.cancelChannel)
                         {
-                            this.error = new ContextCanceledException();
+                            this.Error = new ContextCanceledException();
                         }
                         else if (channel == timeoutChan)
                         {
-                            this.error = new ContextExpiredException();
+                            this.Error = new ContextExpiredException();
                         }
 
                         await this.Done.CompleteAsync();
@@ -75,7 +72,7 @@ namespace Ncp
 
         public Channel<uint?> Done { get; }
 
-        public Exception Error => this.error;
+        public Exception Error { get; private set; }
 
         public async Task CancelAsync()
         {

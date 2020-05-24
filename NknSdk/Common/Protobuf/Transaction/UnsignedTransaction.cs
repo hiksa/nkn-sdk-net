@@ -17,7 +17,7 @@ namespace NknSdk.Common.Protobuf.Transaction
         [ProtoMember(3)]
         public long Fee { get; set; }
 
-        [ProtoMember(4)]
+        [ProtoMember(4, IsPacked = true)]
         public byte[] Attributes { get; set; }
     }
 }

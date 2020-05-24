@@ -61,6 +61,7 @@ namespace NknSdk.Common
         public (byte[] Message, byte[] Nonce) Encrypt(byte[] message, string destinationPublicKey)
         {
             var nonce = PseudoRandom.RandomBytes(Crypto.NonceLength);
+            //var nonce = new byte[] { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
 
             var sharedKey = this.GetSharedSecret(destinationPublicKey);
             var encrypted = Crypto.EncryptSymmetric(message, nonce, sharedKey);

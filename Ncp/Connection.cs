@@ -183,13 +183,13 @@ namespace Ncp
                     var cts = new CancellationTokenSource();
                     var channelTasks = new List<Task<Channel<uint?>>>
                     {
-                        this.session.resendChan.Push(seq, cts.Token),
+                        this.session.resendChannel.Push(seq, cts.Token),
                         this.session.Context.Done.Shift(cts.Token)
                     };
 
                     var channel = await channelTasks.SelectAsync(cts);
 
-                    if (channel == this.session.resendChan)
+                    if (channel == this.session.resendChannel)
                     {
                         seq = 0;
                         break;
@@ -325,7 +325,7 @@ namespace Ncp
 
                     if (item.Value < threshhold)
                     {
-                        await this.session.resendChan.Push(item.Key);
+                        await this.session.resendChannel.Push(item.Key);
 
                         this.resentSeq.Add(item.Key, default);
 
@@ -338,13 +338,13 @@ namespace Ncp
                         var cts2 = new CancellationTokenSource();
                         var channelTasks2 = new List<Task<Channel<uint?>>>
                         {
-                            this.session.resendChan.Push(item.Key, cts.Token),
+                            this.session.resendChannel.Push(item.Key, cts.Token),
                             this.session.Context.Done.Shift(cts.Token)
                         };
 
                         var channel2 = await channelTasks2.SelectAsync(cts);
 
-                        if (channel2 == this.session.resendChan)
+                        if (channel2 == this.session.resendChannel)
                         {
                             this.resentSeq.Add(item.Key, default);
                             this.WindowSize /= 2;

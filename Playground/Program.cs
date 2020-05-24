@@ -21,10 +21,9 @@ namespace Playground
             var address4 = "7ade8659d490283303beb2f224cff1f3709364ce6765a7132d65ed1a6e10ecf9";
 
             var options = MultiClientOptions.Default;
-            options.NumberOfSubClients = 1;
+            options.NumberOfSubClients = 4;
             options.ResponseTimeout = 500_000;
             options.Seed = seed1;
-            //options.Identifier = "55";
 
             var sessionConfig = SessionConfiguration.Default;
 
@@ -38,39 +37,51 @@ namespace Playground
                     return;
                 }
 
+                connected = true;
+
                 client.Listen(new string[] { address2 });
 
-                Task.Run(async delegate
+                //var test = client.Send(address2, new byte[] { 1, 2, 3 }, new SendOptions { IsEncrypted = true }).GetAwaiter().GetResult();
+                //var test2 = test.GetAwaiter().GetResult();
+
+                //Console.WriteLine("message response" + string.Join(",", test2));
+
+                var session = client.DialAsync(address2, SessionConfiguration.Default).GetAwaiter().GetResult();
+                Console.WriteLine("Session established");
+                Task.Factory.StartNew(async delegate
                 {
-                    
+                    var c = 0;
+                    while (true)
+                    {
+                        var payload = new byte[] { (byte)c, (byte)c, (byte)c };
+                        Console.WriteLine("Session writing... " + string.Join(", ", payload));
+                        await session.WriteAsync(payload);
+
+                        c++;
+
+                        await Task.Delay(1000);
+                    }
+
+
+                    //var c = 0;
+                    //while (true)
+                    //{
+                    //    if (sess != null)
+                    //    {
+                    //        try
+                    //        {
+                    //            var test = await sess.ReadAsync();
+                    //            Console.WriteLine("Session read " + c);
+                    //            c++;
+                    //            Console.WriteLine(string.Join(", ", test));
+                    //        }
+                    //        catch (Exception e)
+                    //        {
+
+                    //        }
+                    //    }
+                    //}
                 });
-                //client
-                //    .Send(
-                //        address2,
-                //        new byte[] { 1, 2, 3 },
-                //        new SendOptions { IsEncrypted = true })
-                //    .GetAwaiter()
-                //    .GetResult();
-
-              //  var session = client.Dial(address2, SessionConfiguration.Default).GetAwaiter().GetResult();
-
-                //   Console.WriteLine(session.Config.CheckBytesReadInterval);
-
-                var sendOptions = new SendOptions
-                {
-                    IsEncrypted = true
-                };
-
-                //var task = client
-                //    .Send(
-                //        address4,
-                //        //   "75",
-                //        new byte[] { 1, 2, 3, 4, 5, 100 },
-                //        sendOptions)
-                //    .GetAwaiter()
-                //    .GetResult();
-
-                //task.GetAwaiter().GetResult();
             };
 
             client.OnMessage(request =>
@@ -82,79 +93,50 @@ namespace Playground
                 return Task.FromResult((object)new byte[] { 1, 2 });
             });
 
-
             Session sess = null;
             client.OnSession(x =>
             {
-                Console.WriteLine("Session");
-                Console.WriteLine(x.Config.CheckBytesReadInterval);
+                Console.WriteLine("***On Session***");
                 sess = x;
 
                 Task.Factory.StartNew(async delegate
                 {
-                    //var c = 0;
-                    //while (true)
-                    //{
-                    //    var payload = new byte[] { (byte)c, (byte)c, (byte)c };
-                    //    Console.WriteLine("Session writing... " + string.Join(", ", payload));
-                    //    await sess.WriteAsync(payload);
-
-                    //    c++;
-
-                    //    await Task.Delay(1000);
-                    //}
-
-
                     var c = 0;
                     while (true)
                     {
-                        if (sess != null)
-                        {
-                            try
-                            {
-                                var test = await sess.ReadAsync();
-                                Console.WriteLine("Session read " + c);
-                                c++;
-                                Console.WriteLine(string.Join(", ", test));
-                            }
-                            catch (Exception e)
-                            {
+                        var payload = new byte[] { (byte)c, (byte)c, (byte)c };
+                        Console.WriteLine("Session writing... " + string.Join(", ", payload));
+                        await sess.WriteAsync(payload);
 
-                            }
-                        }
+                        c++;
+
+                        await Task.Delay(1000);
                     }
+
+
+                    //var c = 0;
+                    //while (true)
+                    //{
+                    //    if (sess != null)
+                    //    {
+                    //        try
+                    //        {
+                    //            var test = await sess.ReadAsync();
+                    //            Console.WriteLine("Session read " + c);
+                    //            c++;
+                    //            Console.WriteLine(string.Join(", ", test));
+                    //        }
+                    //        catch (Exception e)
+                    //        {
+
+                    //        }
+                    //    }
+                    //}
                 });
 
                 return Task.FromResult((object)true);
             });
-
-            Task.Run(async () =>
-            {
-
-
-                //var task = client
-                //    .Send(
-                //        address4,
-                //        //"75",
-                //        new byte[] { 1, 1 },
-                //        sendOptions,
-                //        x =>
-                //        {
-                //            var type = x.GetType();
-                //            if (type == typeof(string))
-                //            {
-                //                Console.WriteLine(x?.ToString());
-                //            }
-                //            else if (type == typeof(byte[]))
-                //            {
-                //                Console.WriteLine(string.Join(", ", (byte[])x));
-                //            }
-                //        })
-                //    .GetAwaiter()
-                //    .GetResult();
-
-            }).GetAwaiter().GetResult();
-
+    
             client.DataReceived += Client_DataReceived;
 
             client.TextReceived += Client_TextReceived;

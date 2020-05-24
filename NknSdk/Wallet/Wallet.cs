@@ -89,7 +89,7 @@ namespace NknSdk.Wallet
 
             options.TxPool = true;
 
-            var data = await RpcClient.GetNonceByAddress(options.RpcServer, address);
+            var data = await RpcClient.GetNonceByAddress(address, options.RpcServer);
             if (data.Nonce == null)
             {
                 throw new InvalidResponseException("nonce is null");

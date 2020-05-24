@@ -11,10 +11,10 @@ namespace NknSdk.Common.Protobuf.Messages
         [ProtoMember(1)]
         public string Source { get; set; }
 
-        [ProtoMember(2)]
+        [ProtoMember(2, IsPacked = true)]
         public byte[] Payload { get; set; }
 
-        [ProtoMember(3)]
+        [ProtoMember(3, IsPacked = true)]
         public byte[] PreviousSignature { get; set; }
     }
 }

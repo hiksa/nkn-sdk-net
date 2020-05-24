@@ -22,16 +22,16 @@ namespace NknSdk.Common.Rpc
             httpClient = new HttpClient() { Timeout = TimeSpan.FromSeconds(10) };
         }
 
-        public static async Task<GetWsAddressResult> GetWsAddress(string address, string remoteAddress)
+        public static async Task<GetWsAddressResult> GetWsAddress(string nodeUri, string address)
         {
-            remoteAddress.ThrowIfNullOrEmpty("remoteAddress is empty");
-            return await CallRpc<GetWsAddressResult>(address, "getwsaddr", new { address = remoteAddress });
+            address.ThrowIfNullOrEmpty("remoteAddress is empty");
+            return await CallRpc<GetWsAddressResult>(nodeUri, "getwsaddr", new { address = address });
         }
 
-        public static async Task<GetWsAddressResult> GetWssAddress(string address, string remoteAddress)
+        public static async Task<GetWsAddressResult> GetWssAddress(string nodeUri, string address)
         {
-            remoteAddress.ThrowIfNullOrEmpty("remoteAddress is empty");
-            return await CallRpc<GetWsAddressResult>(address, "getwssaddr", new { address = remoteAddress });
+            address.ThrowIfNullOrEmpty("remoteAddress is empty");
+            return await CallRpc<GetWsAddressResult>(nodeUri, "getwssaddr", new { address = address });
         }
 
         public static async Task<GetSubscribersResult> GetSubscribers(
@@ -56,50 +56,50 @@ namespace NknSdk.Common.Rpc
             return await CallRpc<GetSubscribersResult>(address, "getsubscribers", parameters);
         }
 
-        public static async Task<int> GetSubscribersCount(string address, string topic)
+        public static async Task<int> GetSubscribersCount(string nodeUri, string topic)
         {
             topic.ThrowIfNullOrEmpty("topic is empty");
 
             var parameters = new { topic };
 
-            return await CallRpc<int>(address, "getsubscriberscount", parameters);
+            return await CallRpc<int>(nodeUri, "getsubscriberscount", parameters);
         }
 
-        public static async Task<GetSubscriptionResult> GetSubscription(string address, string topic, string subscriber)
+        public static async Task<GetSubscriptionResult> GetSubscription(string nodeUri, string topic, string subscriber)
         {
             topic.ThrowIfNullOrEmpty("topic is empty");
             subscriber.ThrowIfNullOrEmpty("subscriber is empty");
 
             var parameters = new { topic, subscriber };
 
-            return await CallRpc<GetSubscriptionResult>(address, "getsubscription", parameters);
+            return await CallRpc<GetSubscriptionResult>(nodeUri, "getsubscription", parameters);
         }
 
-        public static async Task<object> GetBalanceByAddress(string address, string remoteAddress)
+        public static async Task<object> GetBalanceByAddress(string nodeUri, string address)
         {
-            remoteAddress.ThrowIfNullOrEmpty("remoteAddress is empty");
+            address.ThrowIfNullOrEmpty("remoteAddress is empty");
 
-            var parameters = new { address = remoteAddress };
+            var parameters = new { address };
 
-            return await CallRpc<object>(address, "getbalancebyaddr", parameters);
+            return await CallRpc<object>(nodeUri, "getbalancebyaddr", parameters);
         }
 
-        public static async Task<GetNonceByAddrResult> GetNonceByAddress(string address, string remoteAddress)
+        public static async Task<GetNonceByAddrResult> GetNonceByAddress(string address, string nodeUri)
         {
-            remoteAddress.ThrowIfNullOrEmpty("remoteAddress is empty");
+            address.ThrowIfNullOrEmpty("remoteAddress is empty");
 
-            var parameters = new { address = remoteAddress };
+            var parameters = new { address };
 
-            return await CallRpc<GetNonceByAddrResult>(address, "getnoncebyaddr", parameters);
+            return await CallRpc<GetNonceByAddrResult>(nodeUri, "getnoncebyaddr", parameters);
         }
 
-        public static async Task<GetRegistrantResult> GetRegistrant(string address, string name)
+        public static async Task<GetRegistrantResult> GetRegistrant(string nodeUri, string name)
         {
             name.ThrowIfNullOrEmpty("name is empty");
 
             var parameters = new { name };
 
-            return await CallRpc<GetRegistrantResult>(address, "getregistrant", parameters);
+            return await CallRpc<GetRegistrantResult>(nodeUri, "getregistrant", parameters);
         }
 
         public static async Task<GetLatestBlockHashResult> GetLatestBlockHash(string address)
@@ -107,18 +107,18 @@ namespace NknSdk.Common.Rpc
             return await CallRpc<GetLatestBlockHashResult>(address, "getlatestblockhash");
         }
 
-        public static async Task<string> SendRawTransaction(string address, Transaction transaction)
+        public static async Task<string> SendRawTransaction(string nodeUri, Transaction transaction)
         {
             var serialized = ProtoSerializer.Serialize(transaction);
 
             var parameters = new { tx = serialized.ToHexString() };
 
-            return await CallRpc<string>(address, "sendrawtransaction", parameters);
+            return await CallRpc<string>(nodeUri, "sendrawtransaction", parameters);
         }
 
-        private static async Task<T> CallRpc<T>(string address, string method, object parameters = null)
+        private static async Task<T> CallRpc<T>(string nodeUri, string method, object parameters = null)
         {
-            address.ThrowIfNullOrEmpty("address is empty");
+            nodeUri.ThrowIfNullOrEmpty("address is empty");
             method.ThrowIfNullOrEmpty("method is empty");
 
             if (parameters == null)
@@ -134,15 +134,15 @@ namespace NknSdk.Common.Rpc
                 { "params", parameters }
             };
 
-            var serialized = JsonSerializer.Serialize(values);
+            var data = JsonSerializer.Serialize(values);
 
-            var requestContent = new ByteArrayContent(serialized);
+            var requestContent = new ByteArrayContent(data);
 
-            var response = await httpClient.PostAsync(address, requestContent);
+            var response = await httpClient.PostAsync(nodeUri, requestContent);
 
             if (response.IsSuccessStatusCode == false)
             {
-                throw new ServerException($"Unsuccessful Rpc call. Node address: {address} | Method: {method}");
+                throw new ServerException($"Unsuccessful Rpc call. Node uri: {nodeUri} | Method: {method}");
             }
 
             var responseContent = await response.Content.ReadAsStringAsync();

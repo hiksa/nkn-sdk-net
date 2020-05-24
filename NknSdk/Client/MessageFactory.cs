@@ -15,7 +15,7 @@ namespace NknSdk.Client
     {
         public static Payload MakePayload(PayloadType type, string replyToId, byte[] data, string messageId)
         {
-            var payload = new Payload { Type = type };
+            var payload = new Payload { Type = type, Data = data };
 
             if (!string.IsNullOrWhiteSpace(replyToId))
             {
@@ -29,8 +29,6 @@ namespace NknSdk.Client
             {
                 payload.MessageId = PseudoRandom.RandomBytes(Constants.MessageIdLength);
             }
-
-            payload.Data = data;
 
             return payload;
         }
@@ -121,7 +119,7 @@ namespace NknSdk.Client
                 signatureChain.BlockHash = client.signatureChainBlockHash.FromHexString();
             }
 
-            var signatures = new List<string>();
+            var signatures = new List<byte[]>();
 
             for (int i = 0; i < destinations.Count; i++)
             {
@@ -142,17 +140,17 @@ namespace NknSdk.Client
                 digest = Crypto.Sha256Hex(digest + signatureChainElementSerialized);
 
                 var signature = client.Key.Sign(digest.FromHexString());
-                signatures.Add(signature.ToHexString());
+                signatures.Add(signature);
             }
 
             var message = new OutboundMessage
             {
-                Destinations = destinations,
-                Payloads = payloads,
+                Destinations = destinations.ToArray(),
+                Payloads = payloads.ToArray(),
                 MaxHoldingSeconds = maxHoldingSeconds,
                 Nonce = signatureChain.Nonce,
                 BlockHash = signatureChain.BlockHash,
-                Signatures = signatures.Select(x => x.FromHexString()).ToList()
+                Signatures = signatures.ToArray()
             };
 
             var compressionType = payloads.Count > 1

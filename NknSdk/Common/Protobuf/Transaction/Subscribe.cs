@@ -5,7 +5,7 @@ namespace NknSdk.Common.Protobuf.Transaction
     [ProtoContract]
     public class Subscribe : ISerializable
     {
-        [ProtoMember(1)]
+        [ProtoMember(1, IsPacked = true)]
         public byte[] Subscriber { get; set; }
 
         [ProtoMember(2)]

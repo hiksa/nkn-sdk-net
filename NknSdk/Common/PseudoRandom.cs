@@ -24,6 +24,6 @@ namespace NknSdk.Common
 
         public static string RandomBytesAsHexString(int length) => RandomBytes(length).ToHexString();
 
-        public static int RandomInt() => random.Next();
+        public static int RandomInt() => 1;
     }
 }

@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text;
 using System.Threading;
 using System.Threading.Channels;
+using System.Threading.Tasks;
 using Xunit;
 
 namespace NknSdk.Tests.Ncp
@@ -19,32 +20,35 @@ namespace NknSdk.Tests.Ncp
                 onAccept.Writer.WriteAsync(1);
 
                 var cts = new CancellationTokenSource();
-                var activeChannel = ChannelExtensions
-                    .SelectAsync(
-                        cts,
-                        onAccept.Shift(cts.Token),
-                        Constants.ClosedChannel.Shift(cts.Token))
+                var channelTasks = new List<Task<Channel<uint?>>>
+                {
+                    onAccept.Shift(cts.Token),
+                    Constants.ClosedChannel.Shift(cts.Token)
+                };
+
+                var channel = channelTasks
+                    .SelectAsync(cts)
                     .GetAwaiter()
                     .GetResult();
 
-                Assert.Equal(onAccept, activeChannel);
+                Assert.Equal(onAccept, channel);
             }
         }
 
         [Fact]
         public void Should_Select_CorrectValue()
         {
-            var firstChannel = Channel.CreateBounded<uint?>(1);
-            firstChannel.Writer.WriteAsync(5)
-                .GetAwaiter()
-                .GetResult();
+            //var firstChannel = Channel.CreateBounded<uint?>(1);
+            //firstChannel.Writer.WriteAsync(5)
+            //    .GetAwaiter()
+            //    .GetResult();
 
-            var cts = new CancellationTokenSource();
+            //var cts = new CancellationTokenSource();
 
-            var value = ChannelExtensions
-                .SelectValueAsync(firstChannel, Constants.ClosedChannel)
-                .GetAwaiter()
-                .GetResult();
+            //var value = Extensions
+            //    .SelectValueAsync(firstChannel, Constants.ClosedChannel)
+            //    .GetAwaiter()
+            //    .GetResult();
         }
     }
 }

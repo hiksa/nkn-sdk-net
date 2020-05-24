@@ -2,6 +2,7 @@
 using NknSdk.Common.Protobuf.Payloads;
 using System;
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 
 namespace NknSdk.Client
@@ -13,7 +14,7 @@ namespace NknSdk.Client
 
         public ClientResponseManager()
         {
-            this.responseProcessors = new Dictionary<string, ClientResponseProcessor>();
+            this.responseProcessors = new ConcurrentDictionary<string, ClientResponseProcessor>();
         }
 
         public void Add(ClientResponseProcessor processor)

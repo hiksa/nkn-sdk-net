@@ -5,8 +5,6 @@ namespace Ncp
 {
     public static class Constants
     {
-        private static Channel<uint?> closedChannel;
-
         public const int MinSequenceId = 1;
         public const int DefaultMtu = 1024;
         public const int DefaultInitialConnectionWindowSize = 32;
@@ -23,23 +21,18 @@ namespace Ncp
         public const int DefaultSendBytesReadThreshold = 200;
         public const long DefaultSessionWindowSize = 4 << 20;
         public const bool DefaultNonStream = false;
-
         public const int MaximumWaitTime = 1000;
 
-        public static readonly Exception MaxWaitError = new Exception("max wait time reached");
-
-        public static Channel<uint?> ClosedChannel
+        static Constants()
         {
-            get
-            {
-                if (closedChannel == null)
-                {
-                    closedChannel = Channel.CreateUnbounded<uint?>();
-                    closedChannel.Writer.Complete();
-                }
+            ClosedChannel = Channel.CreateUnbounded<uint?>();
+            ClosedChannel.Writer.Complete();
 
-                return closedChannel;
-            }
+            MaxWaitError = new Exception("max wait time reached");
         }
+
+        public static Exception MaxWaitError { get; private set; }
+
+        public static Channel<uint?> ClosedChannel { get; private set; }
     }
 }

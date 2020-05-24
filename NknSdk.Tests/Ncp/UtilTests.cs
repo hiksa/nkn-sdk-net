@@ -58,7 +58,7 @@ namespace NknSdk.Tests.Ncp
                 Console.WriteLine("Task completed");
             });
 
-            var timeout = Util.MakeTimeoutTask(task, 10_000, new WriteDeadlineExceededException());
+            var timeout = task.ToTimeoutTask(10_000, new WriteDeadlineExceededException());
 
             var a = Task.WhenAny(task, timeout).GetAwaiter().GetResult();
 

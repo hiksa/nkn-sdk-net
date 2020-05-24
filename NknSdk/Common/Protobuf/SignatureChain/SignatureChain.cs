@@ -12,22 +12,22 @@ namespace NknSdk.Common.Protobuf.SignatureChain
         [ProtoMember(2)]
         public uint DataSize { get; set; }
 
-        [ProtoMember(3)]
+        [ProtoMember(3, IsPacked = true)]
         public byte[] BlockHash { get; set; }
 
-        [ProtoMember(4)]
+        [ProtoMember(4, IsPacked = true)]
         public byte[] SourceId { get; set; }
 
-        [ProtoMember(5)]
+        [ProtoMember(5, IsPacked = true)]
         public byte[] SourcePublicKey { get; set; }
 
-        [ProtoMember(6)]
+        [ProtoMember(6, IsPacked = true)]
         public byte[] DestinationId { get; set; }
 
-        [ProtoMember(7)]
+        [ProtoMember(7, IsPacked = true)]
         public byte[] DestinationPublicKey { get; set; }
 
-        [ProtoMember(8)]
+        [ProtoMember(8, IsPacked = true)]
         public IList<SignatureChainElement> Elements { get; set; }
     }
 }

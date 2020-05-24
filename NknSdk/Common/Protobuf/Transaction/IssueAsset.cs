@@ -5,7 +5,7 @@ namespace NknSdk.Common.Protobuf.Transaction
     [ProtoContract]
     public class IssueAsset : ISerializable
     {
-        [ProtoMember(1)]
+        [ProtoMember(1, IsPacked = true)]
         public byte[] Sender { get; set; }
 
         [ProtoMember(2)]

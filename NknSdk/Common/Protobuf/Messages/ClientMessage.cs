@@ -11,7 +11,7 @@ namespace NknSdk.Common.Protobuf.Messages
         [ProtoMember(1)]
         public ClientMessageType? Type { get; set; }
 
-        [ProtoMember(2)]
+        [ProtoMember(2, IsPacked = true)]
         public byte[] Message { get; set; }
 
         [ProtoMember(3)]

@@ -8,7 +8,7 @@ namespace NknSdk.Common.Protobuf.Transaction
         [ProtoMember(1)]
         public PayloadType Type { get; set; }
 
-        [ProtoMember(2)]
+        [ProtoMember(2, IsPacked = true)]
         public byte[] Data { get; set; }
     }
 }
