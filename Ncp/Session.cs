@@ -33,7 +33,7 @@ namespace Ncp
         private uint sendWindowStartSeq;
         private uint sendWindowEndSeq;
         private uint recieveWindowStartSeq;
-        private int recvWindowUsed;
+        //private int recvWindowUsed;
         private int recieveWindowUsed;
         private ulong bytesWrite;
         private DateTime bytesReadUpdateTime;
@@ -214,7 +214,7 @@ namespace Ncp
             return value;
         }
 
-        public async Task ReceiveWithAsync(string localClientId, string remoteClientId, byte[] buffer)
+        public void ReceiveWithAsync(string localClientId, string remoteClientId, byte[] buffer)
         {
             if (this.IsClosed)
             {
@@ -232,7 +232,7 @@ namespace Ncp
             var established = this.isEstablished;
             if (established == false && packet.Handshake)
             {
-                await this.HandleHandshakePacketAsync(packet);
+                this.HandleHandshakePacketAsync(packet);
                 return;
             }
 
@@ -271,8 +271,8 @@ namespace Ncp
 
                     if (packet.AckSeqCounts?.Length > 0)
                     {
-                        var step = packet.AckSeqCounts[i];
-                        ackEndSequence = NextSequenceId(ackStartSequence, (int)step);
+                        var step = (int)packet.AckSeqCounts[i];
+                        ackEndSequence = NextSequenceId(ackStartSequence, step);
                     }
                     else
                     {
@@ -296,7 +296,7 @@ namespace Ncp
                             foreach (var connection in this.connections)
                             {
                                 var isSentByMe = connection.Key == Connection.GetKey(localClientId, remoteClientId);
-                                await connection.Value.ReceiveAckAsync(seq, isSentByMe);
+                                connection.Value.ReceiveAckAsync(seq, isSentByMe);
                             }
 
                             this.sendWindowData.Remove(seq);
@@ -348,13 +348,13 @@ namespace Ncp
                 {
                     if (this.recieveWindowData.ContainsKey(packet.SequenceId) == false)
                     {
-                        if (this.recvWindowUsed + packet.Data.Length > this.recieveWindowSize)
+                        if (this.recieveWindowUsed + packet.Data.Length > this.recieveWindowSize)
                         {
                             throw new RecieveWindowFullException();
                         }
 
                         this.recieveWindowData.Add(packet.SequenceId, packet.Data);
-                        this.recvWindowUsed += packet.Data.Length;
+                        this.recieveWindowUsed += packet.Data.Length;
 
                         if (packet.SequenceId == this.recieveWindowStartSeq)
                         {
@@ -659,16 +659,9 @@ namespace Ncp
             Task.Run(this.StartFlushAsync);
             Task.Run(this.StartCheckBytesReadAsync);
 
-            if (this.connections != null)
+            foreach (var connection in this.connections.Values)
             {
-                foreach (var connection in this.connections.Values)
-                {
-                    connection.Start();
-                }
-            }
-            else
-            {
-
+                connection.Start();
             }
         }
 
@@ -778,7 +771,6 @@ namespace Ncp
                 };
 
                 var channel = await channelTasks.SelectAsync(cts);
-
                 if (channel == context.Done)
                 {
                     throw context.Error;
@@ -816,7 +808,6 @@ namespace Ncp
             };
 
             var channel = await channelTasks.SelectAsync(cts);
-
             if (channel == this.Context.Done)
             {
                 throw this.Context.Error;
@@ -855,9 +846,9 @@ namespace Ncp
                         remoteClientId = this.remoteClientIds[i % this.remoteClientIds.Count];
                     }
 
-                    var task = this.SendWithAsync(this.localClientIds[i], remoteClientId, data); 
+                    var task = this.SendWithAsync(this.localClientIds[i], remoteClientId, data);
 
-                    tasks.Add(task);
+                    tasks.Add(task.ToTimeoutTask(timeout, new WriteDeadlineExceededException()));
                 }
             }
 
@@ -870,7 +861,7 @@ namespace Ncp
             }
         }
 
-        private async Task HandleHandshakePacketAsync(Packet packet)
+        private void HandleHandshakePacketAsync(Packet packet)
         {
             if (this.isEstablished)
             {
@@ -908,12 +899,12 @@ namespace Ncp
                 connectionsCount = packet.ClientIds.Count;
             }
 
-            var connections = new ConcurrentDictionary<string, Connection>();
+            IDictionary<string, Connection> connections = new ConcurrentDictionary<string, Connection>();
             for (int i = 0; i < connectionsCount; i++)
             {
                 var connection = new Connection(this, this.localClientIds[i], packet.ClientIds[i]);
                 var connectionKey = Connection.GetKey(connection.LocalClientId, connection.RemoteClientId);
-                connections.TryAdd(connectionKey, connection);
+                connections.Add(connectionKey, connection);
             }
 
             this.connections = connections;
@@ -936,7 +927,7 @@ namespace Ncp
                 Constants.ClosedChannel.Shift(cts.Token)
             };
 
-            await channelTasks.SelectAsync(cts);
+            channelTasks.SelectAsync(cts);
         }
 
         private async Task SendClosePacketAsync()
@@ -1059,6 +1050,6 @@ namespace Ncp
         private void SetReadTimeout(int timeout)
             => this.readContext = Context.WithTimeout(this.Context, timeout);
 
-        private void SetLinger(int linger) => this.Config.Linger = linger;
+        public void SetLinger(int linger) => this.Config.Linger = linger;
     }
 }

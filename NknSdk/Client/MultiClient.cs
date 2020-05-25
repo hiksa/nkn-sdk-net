@@ -12,6 +12,7 @@ using System.Text.RegularExpressions;
 using NknSdk.Common.Exceptions;
 using Ncp.Exceptions;
 using NknSdk.Wallet;
+using System.Collections.Concurrent;
 
 namespace NknSdk.Client
 {
@@ -29,19 +30,19 @@ namespace NknSdk.Client
         private readonly string identifier;
         private readonly string address;
         private IEnumerable<Regex> acceptedAddresses;
-        private readonly Dictionary<string, Session> sessions;
+        private readonly IDictionary<string, Session> sessions;
         private readonly bool isReady;
         private bool isClosed;
         private MemoryCache messageCache;
         public IList<Func<MessageHandlerRequest, Task<object>>> connectListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
         public IList<Func<MessageHandlerRequest, Task<object>>> messageListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
-        public IList<Func<Session, Task<object>>> sessionListeners = new List<Func<Session, Task<object>>>();
+        public IList<Func<Session, Task>> sessionListeners = new List<Func<Session, Task>>();
 
         public MultiClient(MultiClientOptions options)
         {
             var baseIdentifier = options.Identifier ?? "";
 
-            var clients = new Dictionary<string, Client>();
+            var clients = new ConcurrentDictionary<string, Client>();
             if (options.OriginalClient)
             {
                 var clientId = Client.AddIdentifier("", "");
@@ -87,9 +88,9 @@ namespace NknSdk.Client
             
             this.connectListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
             this.messageListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
-            this.sessionListeners = new List<Func<Session, Task<object>>>();
+            this.sessionListeners = new List<Func<Session, Task>>();
             this.acceptedAddresses = new List<Regex>();
-            this.sessions = new Dictionary<string, Session>();
+            this.sessions = new ConcurrentDictionary<string, Session>();
             this.messageCache = new MemoryCache("messageCache");
 
             this.isReady = false;
@@ -120,6 +121,10 @@ namespace NknSdk.Client
                         }
                         catch (SessionClosedException)
                         {
+                        }
+                        catch (Exception)
+                        {
+
                         }
 
                         return false;
@@ -276,7 +281,7 @@ namespace NknSdk.Client
             this.messageListeners.Add(func);
         }
 
-        public void OnSession(Func<Session, Task<object>> func)
+        public void OnSession(Func<Session, Task> func)
         {
             this.sessionListeners.Add(func);
         }
@@ -319,7 +324,7 @@ namespace NknSdk.Client
                 this.sessions.Add(sessionKey, session);
             }
 
-            await session.ReceiveWithAsync(clientId, remoteClientId, data);
+            session.ReceiveWithAsync(clientId, remoteClientId, data);
 
             if (existed == false)
             {
@@ -327,17 +332,20 @@ namespace NknSdk.Client
 
                 if (this.sessionListeners.Count > 0)
                 {
-                    await Task.WhenAll(this.sessionListeners.Select(async func =>
+                    var tasks = this.sessionListeners.Select(async func =>
                     {
                         try
                         {
-                            return await func(session);
+                            await func(session);
                         }
-                        catch (Exception)
+                        catch (Exception ex)
                         {
-                            return null;
+                            Console.WriteLine("Session handler error " + ex.Message);
+                            return;
                         }
-                    }));
+                    });
+
+                    await Task.WhenAll(tasks);
                 }
             }
         }

@@ -54,7 +54,7 @@ namespace Ncp
 
         public void SendAck(uint sequenceId) => this.sendAckQueue.Enqueue(sequenceId, sequenceId);
 
-        public async Task ReceiveAckAsync(uint sequenceId, bool isSentByMe)
+        public void ReceiveAckAsync(uint sequenceId, bool isSentByMe)
         {
             if (!this.timeSentSeq.ContainsKey(sequenceId))
             {
@@ -91,7 +91,7 @@ namespace Ncp
                 Constants.ClosedChannel.Shift(cts.Token)
             };
 
-            await channelTasks.SelectAsync(cts);
+            Task.Run(() => channelTasks.SelectAsync(cts));
         }
 
         private int SendWindowUsed() => this.timeSentSeq.Count;
