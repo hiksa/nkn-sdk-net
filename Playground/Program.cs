@@ -3,6 +3,7 @@ using NknSdk.Client;
 using NknSdk.Client.Model;
 using NknSdk.Common;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
@@ -41,8 +42,6 @@ namespace Playground
 
                 connected = true;
 
-                await Task.Delay(1000);
-
                 client.Listen(new string[] { address2 });
 
                 var session = await client.DialAsync(address4, SessionConfiguration.Default);
@@ -50,8 +49,8 @@ namespace Playground
 
                 session.SetLinger(-1);
 
-                //var filePath = @"..\..\..\large.txt";
-                var filePath = @"..\..\..\small.txt";
+                var filePath = @"..\..\..\large.txt";
+                //var filePath = @"..\..\..\small.txt";
                 var file = new FileInfo(filePath);
                 var fileNameEncoded = Encoding.ASCII.GetBytes(file.Name);
 
@@ -65,10 +64,14 @@ namespace Playground
                 await WriteUintToSession(session, (uint)file.Length);
                 //await Task.Delay(1000);
 
+                var sw = Stopwatch.StartNew();
                 var fileBytes = File.ReadAllBytes(filePath);
                 await session.WriteAsync(fileBytes);
+                sw.Stop();
 
-                Console.WriteLine("Finished writing file " + file.Name);
+                var kilobytesPerSecond = file.Length / sw.ElapsedMilliseconds;
+
+                Console.WriteLine($"Finished writing file {file.Name} in {sw.Elapsed} with {kilobytesPerSecond} kbps");
 
                 //    Task.Factory.StartNew(async delegate
                 //    {
