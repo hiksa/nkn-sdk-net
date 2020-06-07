@@ -44,9 +44,10 @@ namespace NknSdk.Wallet
         public static string HexStringToProgramHash(string hexString)
         {
             var sha256hash = Crypto.Sha256Hex(hexString);
-            //var result = Utils.
 
-            return sha256hash;
+            var result = Crypto.Ripemd160Hex(sha256hash);
+
+            return result.ToHexString();
         }
 
         public static string ProgramHashStringToAddress(string programHash)
@@ -86,7 +87,7 @@ namespace NknSdk.Wallet
             return byteCountHex + hex;
         }
 
-        private static string AddressStringToProgramHash(string address)
+        public static string AddressStringToProgramHash(string address)
         {
             var addressBytes = address.Base58Decode();
             

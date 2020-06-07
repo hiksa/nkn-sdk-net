@@ -42,6 +42,7 @@ namespace NknSdk.Client
         private bool shouldReconnect;
         private int reconnectInterval;
         private ClientResponseManager responseManager;
+        private readonly Wallet.Wallet wallet;
         private WebSocket webSocket;
         private GetWsAddressResult remoteNode;
         private bool isClosed;
@@ -56,6 +57,10 @@ namespace NknSdk.Client
             var address = string.IsNullOrWhiteSpace(identifier)
                 ? key.PublicKey
                 : identifier + "." + key.PublicKey;
+            var walletOptions = new Wallet.WalletOptions();
+            walletOptions.SeedHex = key.Seed;
+            var wallet = new Wallet.Wallet(walletOptions);
+
 
             this.options = options;
 
@@ -65,6 +70,7 @@ namespace NknSdk.Client
             this.address = address;
             this.reconnectInterval = options.ReconnectIntervalMin ?? 0;
             this.responseManager = new ClientResponseManager();
+            //this.wallet = wallet;
 
             this.ConnectAsync();
         }
@@ -137,25 +143,8 @@ namespace NknSdk.Client
             var messageId = await this.SendPayloadAsync(destinations, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseCallback != null)
             {
-                this.responseManager.Add(new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
-            }
-
-            return messageId;
-        }
-
-        public async Task<byte[]> SendTextAsync(
-            IList<string> destinations, 
-            string text, 
-            SendOptions options,
-            ResponseHandler responseCallback = null,
-            TimeoutHandler timeoutCallback = null)
-        {
-            var payload = MessageFactory.MakeTextPayload(text, options.ReplyToId, options.MessageId);
-
-            var messageId = await this.SendPayloadAsync(destinations, payload, options.IsEncrypted.Value);
-            if (messageId != null && options.NoReply != false && responseCallback != null)
-            {
-                this.responseManager.Add(new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
+                var responseProcessor = new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback);
+                this.responseManager.Add(responseProcessor);
             }
 
             return messageId;
@@ -190,6 +179,24 @@ namespace NknSdk.Client
             var payload = MessageFactory.MakeTextPayload(data, options.ReplyToId, options.MessageId);
 
             var messageId = await this.SendPayloadAsync(destination, payload, options.IsEncrypted.Value);
+            if (messageId != null && options.NoReply != false && responseCallback != null)
+            {
+                this.responseManager.Add(new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
+            }
+
+            return messageId;
+        }
+
+        public async Task<byte[]> SendTextAsync(
+            IList<string> destinations,
+            string text,
+            SendOptions options,
+            ResponseHandler responseCallback = null,
+            TimeoutHandler timeoutCallback = null)
+        {
+            var payload = MessageFactory.MakeTextPayload(text, options.ReplyToId, options.MessageId);
+
+            var messageId = await this.SendPayloadAsync(destinations, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseCallback != null)
             {
                 this.responseManager.Add(new ClientResponseProcessor(messageId, options.ResponseTimeout, responseCallback, timeoutCallback));
@@ -245,7 +252,9 @@ namespace NknSdk.Client
             }
 
             var dests = await this.ProcessDestinationsAsync(destinations);
-            var messagesBytes = dests.Select(d => this.MakeMessageFromPayload(payload, isEncrypted, d).ToBytes()).ToList();
+            var messagesBytes = this.MakeMessagesFromPayload(payload, isEncrypted, dests)
+                .Select(x => x.ToBytes())
+                .ToList();
 
             var size = 0;
             var totalSize = 0;
@@ -274,7 +283,7 @@ namespace NknSdk.Client
 
                     destList.Clear();
                     payloads.Clear();
-                    totalSize += size;
+                    totalSize = size;
                 }
 
                 destList.Add(dests[i]);
@@ -360,12 +369,43 @@ namespace NknSdk.Client
             this.webSocket.Send(data);
         }
 
-        private MessagePayload EncryptPayload(byte[] payload, string dest)
+        private IList<MessagePayload> EncryptPayload(byte[] payload, IList<string> destinations)
         {
-            var publicKey = Client.AddressToPublicKey(dest);
+            var nonce = PseudoRandom.RandomBytes(Crypto.NonceLength);
+            var key = PseudoRandom.RandomBytes(Crypto.KeyLength);
+            var encryptedPayload = Crypto.EncryptSymmetric(payload, nonce, key);
+
+            var result = new List<MessagePayload>();
+            for (int i = 0; i < destinations.Count; i++)
+            {
+                var publicKey = Client.AddressToPublicKey(destinations[i]);
+                var encryptedKey = this.Key.Encrypt(key, publicKey);
+                var mergedNonce = encryptedKey.Nonce.Concat(nonce).ToArray();
+                var message = MessageFactory.MakeMessage(encryptedPayload, true, mergedNonce, encryptedKey.Message);
+
+                result.Add(message);
+            }
+
+            return result;
+        }
+
+        private MessagePayload EncryptPayload(byte[] payload, string destination)
+        {
+            var publicKey = Client.AddressToPublicKey(destination);
             var encrypted = this.key.Encrypt(payload, publicKey);
             var message = MessageFactory.MakeMessage(encrypted.Message, true, encrypted.Nonce);
             return message;
+        }
+
+        public IList<MessagePayload> MakeMessagesFromPayload(Payload payload, bool isEcrypted, IList<string> destinations)
+        {
+            var serializedPayload = payload.ToBytes();
+            if (isEcrypted)
+            {
+                return this.EncryptPayload(serializedPayload, destinations);
+            }
+
+            return new List<MessagePayload> { MessageFactory.MakeMessage(serializedPayload, false) };
         }
 
         public MessagePayload MakeMessageFromPayload(Payload payload, bool isEcrypted, string dest)
@@ -670,7 +710,6 @@ namespace NknSdk.Client
 
                             responded = true;
                             break;
-
                         }
                         else if (response is string text)
                         {

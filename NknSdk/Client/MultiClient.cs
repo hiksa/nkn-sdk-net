@@ -13,6 +13,7 @@ using NknSdk.Common.Exceptions;
 using Ncp.Exceptions;
 using NknSdk.Wallet;
 using System.Collections.Concurrent;
+using System.Threading;
 
 namespace NknSdk.Client
 {
@@ -59,6 +60,7 @@ namespace NknSdk.Client
                 var clientId = Client.AddIdentifier("", i.ToString());
                 options.Identifier = Client.AddIdentifier(baseIdentifier, i.ToString());
                 clients[clientId] = new Client(options);
+                Thread.Sleep(200);
 
                 clients[clientId].Connected += (object sender, EventArgs e) =>
                 {
@@ -98,7 +100,7 @@ namespace NknSdk.Client
 
             foreach (var clientId in clientIds)
             {
-                clients[clientId].OnMessage(async message =>
+                clients[clientId].OnMessage(async (MessageHandlerRequest message) =>
                 {
                     if (this.isClosed)
                     {
@@ -122,7 +124,7 @@ namespace NknSdk.Client
                         catch (SessionClosedException)
                         {
                         }
-                        catch (Exception)
+                        catch (Exception ex)
                         {
 
                         }
@@ -131,7 +133,6 @@ namespace NknSdk.Client
                     }
 
                     var key = message.MessageId.ToHexString();
-
                     if (this.messageCache.Get(key) != null)
                     {
                         return false;
@@ -249,6 +250,33 @@ namespace NknSdk.Client
             }
         }
 
+        public async Task<Task<byte[]>> Send(
+            IList<string> destinations,
+            byte[] data,
+            SendOptions options = null,
+            ResponseHandler responseCallback = null,
+            TimeoutHandler timeoutCallback = null)
+        {
+            var readyClientIds = this.GetReadyClientIds();
+            if (readyClientIds.Count() == 0)
+            {
+                throw new ClientNotReadyException();
+            }
+
+            destinations = await this.defaultClient.ProcessDestinationsAsync(destinations);
+
+            try
+            {
+                var tasks = readyClientIds.Select(x => this.SendWithClient(x, destinations, data, options, responseCallback, timeoutCallback));
+                var result = await Task.WhenAny(tasks);
+                return result;
+            }
+            catch (Exception)
+            {
+                throw new ApplicationException("failed to send with any client");
+            }
+        }
+
         public Task<byte[]> SendWithClient(
             string clientId, 
             string destination, 
@@ -270,6 +298,33 @@ namespace NknSdk.Client
 
             return client.SendDataAsync(
                 Client.AddIdentifierPrefix(destination, clientId),
+                data,
+                options,
+                responseCallback,
+                timeoutCallback);
+        }
+
+        public Task<byte[]> SendWithClient(
+            string clientId,
+            IList<string> destinations,
+            byte[] data,
+            SendOptions options,
+            ResponseHandler responseCallback = null,
+            TimeoutHandler timeoutCallback = null)
+        {
+            var client = this.clients[clientId];
+            if (client == null)
+            {
+                throw new InvalidArgumentException("no such clientId");
+            }
+
+            if (client.IsReady == false)
+            {
+                throw new ClientNotReadyException();
+            }
+
+            return client.SendDataAsync(
+                destinations.Select(x => Client.AddIdentifierPrefix(x, clientId)).ToList(),
                 data,
                 options,
                 responseCallback,
@@ -307,24 +362,28 @@ namespace NknSdk.Client
             var sessionKey = Session.GetKey(remoteAddress, sessionId.ToHexString());
 
             Session session;
+            bool existed = false;
 
-            var existed = this.sessions.ContainsKey(sessionKey);
-            if (existed)
+            lock (this)
             {
-                session = this.sessions[sessionKey];
-            }
-            else
-            {
-                if (this.IsAcceptedAddress(remoteAddress) == false)
+                existed = this.sessions.ContainsKey(sessionKey);
+                if (existed)
                 {
-                    throw new AddressNotAllowedException();
+                    session = this.sessions[sessionKey];
                 }
+                else
+                {
+                    if (this.IsAcceptedAddress(remoteAddress) == false)
+                    {
+                        throw new AddressNotAllowedException();
+                    }
 
-                session = this.MakeSession(remoteAddress, sessionId.ToHexString(), this.options.SessionConfiguration);
-                this.sessions.Add(sessionKey, session);
+                    session = this.MakeSession(remoteAddress, sessionId.ToHexString(), this.options.SessionConfiguration);
+                    this.sessions.Add(sessionKey, session);
+                }
             }
-
-            session.ReceiveWithAsync(clientId, remoteClientId, data);
+            
+            await session.ReceiveWithAsync(clientId, remoteClientId, data);
 
             if (existed == false)
             {

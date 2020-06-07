@@ -27,7 +27,7 @@ namespace NknSdk.Tests.Ncp
                 };
 
                 var channel = channelTasks
-                    .SelectAsync(cts)
+                    .FirstAsync(cts)
                     .GetAwaiter()
                     .GetResult();
 

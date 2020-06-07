@@ -12,14 +12,14 @@ namespace NknSdk.Tests.Wallet
         [Fact]
         public void AllProperties()
         {
-            var seed = "b71a349865ed5907821e903389e83424d037d4e1680935fd3c1f33408df2fdf5";
+            var seed = "16735a849deaa136ba6030c3695c4cbdc9b275d5d9a9f46b836841ab4a36179e";
             var account = new Account(seed);
 
-            var expectedAddress = "2myqRmzZA9A6CQ827oko8gNnJ9H7pcHbWR4tU3SVNndNLxgXQcGR5";
-            var expectedContract = "22203fc6bbdae9be658e7b7e85de65d04f3bd39ad41afc316b82314cca7c62e9fd6eac0100d86152d751795bd883fce02b9331c111db149ab6a20d751beaa99111c6295d14";
-            var expectedProgramHash = "d86152d751795bd883fce02b9331c111db149ab6a20d751beaa99111c6295d14";
-            var expectedPublicKey = "3fc6bbdae9be658e7b7e85de65d04f3bd39ad41afc316b82314cca7c62e9fd6e";
-            var expectedSignatureRedeem = "203fc6bbdae9be658e7b7e85de65d04f3bd39ad41afc316b82314cca7c62e9fd6eac";
+            var expectedAddress = "NKNLH46GEreBTEQqZsUcoeiFeTAHEuPGWshw";
+            var expectedContract = "22207ade8659d490283303beb2f224cff1f3709364ce6765a7132d65ed1a6e10ecf9ac01006071b3b89bf3afcb337d278919d154ecc231e913";
+            var expectedProgramHash = "6071b3b89bf3afcb337d278919d154ecc231e913";
+            var expectedPublicKey = "7ade8659d490283303beb2f224cff1f3709364ce6765a7132d65ed1a6e10ecf9";
+            var expectedSignatureRedeem = "207ade8659d490283303beb2f224cff1f3709364ce6765a7132d65ed1a6e10ecf9ac";
 
             Assert.Equal(expectedAddress, account.Address);
             Assert.Equal(expectedContract, account.Contract);

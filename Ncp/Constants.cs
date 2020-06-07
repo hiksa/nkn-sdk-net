@@ -6,7 +6,7 @@ namespace Ncp
     public static class Constants
     {
         public const int MinSequenceId = 1;
-        public const int DefaultMtu = 1024;
+        public const int DefaultMtu = 250_240;
         public const int DefaultInitialConnectionWindowSize = 32;
         public const int DefaultMaxConnectionWindowSize = 256;
         public const int DefaultMinConnectionWindowSize = 1;
@@ -19,10 +19,10 @@ namespace Ncp
         public const int DefaultCheckTimeoutInterval = 500;
         public const int DefaultCheckBytesReadInterval = 1000;
         public const int DefaultSendBytesReadThreshold = 200;
-        public const long DefaultSessionWindowSize = 4 << 20;
+        public const long DefaultSessionWindowSize = 4 << 24;
         public const bool DefaultNonStream = false;
         public const int MaximumWaitTime = 1000;
-
+         
         static Constants()
         {
             ClosedChannel = Channel.CreateUnbounded<uint?>();

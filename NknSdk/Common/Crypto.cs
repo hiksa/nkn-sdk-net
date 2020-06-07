@@ -2,6 +2,7 @@
 using System.Text;
 
 using Chaos.NaCl;
+using HashLib;
 using NSec.Cryptography;
 
 namespace NknSdk.Common
@@ -21,7 +22,7 @@ namespace NknSdk.Common
             var publicKey = new byte[Chaos.NaCl.Ed25519.PublicKeySizeInBytes];
             var privateKey = new byte[Chaos.NaCl.Ed25519.ExpandedPrivateKeySizeInBytes];
 
-            Chaos.NaCl.Ed25519.KeyPairFromSeed(publicKey, privateKey, privateKeySeed);
+            Chaos.NaCl.Ed25519.KeyPairFromSeed(out publicKey, out privateKey, privateKeySeed);
             var key = Key.Import(Algorithm, privateKeySeed, KeyBlobFormat.RawPrivateKey);
 
             return new CryptoKeyPair
@@ -81,6 +82,25 @@ namespace NknSdk.Common
         {
             var inputBytes = Encoding.Default.GetBytes(input);
             return DoubleSha256(inputBytes);
+        }
+
+        public static string Ripemd160(string text)
+        {
+            var hash = HashFactory.Crypto.CreateRIPEMD160();
+            var test = hash.ComputeString(text);
+
+            return test.GetBytes().ToHexString();
+        }
+
+        public static byte[] Ripemd160Hex(string hexString)
+        {
+            var bytes = hexString.FromHexString();
+
+            var hash = HashFactory.Crypto.CreateRIPEMD160();
+
+            var result = hash.ComputeBytes(bytes);
+
+            return result.GetBytes();
         }
     }
 }

@@ -19,5 +19,17 @@ namespace NknSdk.Tests.Wallet
 
             Assert.True(result);
         }
+
+        [Fact]
+        public void HexStringToProgramHash()
+        {
+            var hexString = "207ade8659d490283303beb2f224cff1f3709364ce6765a7132d65ed1a6e10ecf9ac";
+
+            var expected = "6071b3b89bf3afcb337d278919d154ecc231e913";
+
+            var result = Address.HexStringToProgramHash(hexString);
+
+            Assert.Equal(expected, result);
+        }
     }
 }

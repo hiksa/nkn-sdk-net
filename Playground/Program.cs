@@ -2,7 +2,9 @@
 using NknSdk.Client;
 using NknSdk.Client.Model;
 using NknSdk.Common;
+using NknSdk.Wallet;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Text;
@@ -23,6 +25,9 @@ namespace Playground
             var seed4 = "16735a849deaa136ba6030c3695c4cbdc9b275d5d9a9f46b836841ab4a36179e";
             var address4 = "7ade8659d490283303beb2f224cff1f3709364ce6765a7132d65ed1a6e10ecf9";
 
+            var test = new Amount(5);
+            Console.WriteLine(test.Value);
+
             var options = MultiClientOptions.Default;
             options.NumberOfSubClients = 1;
             options.ResponseTimeout = 500_000;
@@ -31,6 +36,8 @@ namespace Playground
             var sessionConfig = SessionConfiguration.Default;
 
             var client = new MultiClient(options);
+
+
             var connected = false;
             client.Connected += async (object sender, EventArgs args) =>
             {
@@ -40,69 +47,20 @@ namespace Playground
                     return;
                 }
 
+                await client.Send(
+                    new List<string> { address2, address3 }, 
+                    new byte[] { 4, 3, 1 }, 
+                    new SendOptions(),
+                    (response) => Console.WriteLine(string.Join(",", (byte[])response))
+                    );
+
+
+
                 connected = true;
 
-                client.Listen(new string[] { address2 });
+                //client.Listen(new string[] { address2 });
 
-                var session = await client.DialAsync(address4, SessionConfiguration.Default);
-                Console.WriteLine("Session established");
-
-                session.SetLinger(-1);
-
-                var filePath = @"..\..\..\large.txt";
-                //var filePath = @"..\..\..\small.txt";
-                var file = new FileInfo(filePath);
-                var fileNameEncoded = Encoding.ASCII.GetBytes(file.Name);
-
-                Console.WriteLine("Writing file name length " + fileNameEncoded.Length);
-                await WriteUintToSession(session, (uint)fileNameEncoded.Length);
-                //await Task.Delay(1000);
-                Console.WriteLine("Writing file name " + fileNameEncoded);
-                await session.WriteAsync(fileNameEncoded);
-                //await Task.Delay(1000);
-                Console.WriteLine("Writing file length " + file.Length);
-                await WriteUintToSession(session, (uint)file.Length);
-                //await Task.Delay(1000);
-
-                var sw = Stopwatch.StartNew();
-                var fileBytes = File.ReadAllBytes(filePath);
-                await session.WriteAsync(fileBytes);
-                sw.Stop();
-
-                var kilobytesPerSecond = file.Length / sw.ElapsedMilliseconds;
-
-                Console.WriteLine($"Finished writing file {file.Name} in {sw.Elapsed} with {kilobytesPerSecond} kbps");
-
-                //    Task.Factory.StartNew(async delegate
-                //    {
-                //        var c = 0;
-
-                //        while (true)
-                //        {
-                //            var payload = new byte[] { (byte)c, (byte)c, (byte)c };
-                //            Console.WriteLine($"Session writing... {c} ..." + string.Join(", ", payload));
-                //            await session.WriteAsync(payload);
-
-                //            c++;
-
-                //            await Task.Delay(2000);
-                //        }
-
-                //        //while (true)
-                //        //{
-                //        //    try
-                //        //    {
-                //        //        var test = await session.ReadAsync();
-                //        //        Console.WriteLine("Session read " + c);
-                //        //        c++;
-                //        //        Console.WriteLine(string.Join(", ", test));
-                //        //    }
-                //        //    catch (Exception e)
-                //        //    {
-                //        //        Console.WriteLine(e.Message);
-                //        //    }
-                //        //}
-                //    });
+                //await DialAndSendFile(address3, client);
             };
 
             client.OnMessage(request =>
@@ -120,44 +78,6 @@ namespace Playground
                 Console.WriteLine("***On Session***");
                 sess = x;
 
-
-
-
-                //Task.Factory.StartNew(async delegate
-                //{
-                //    var c = 0;
-                //    while (true)
-                //    {
-                //        var payload = new byte[] { (byte)c, (byte)c, (byte)c };
-                //        Console.WriteLine("Session writing... " + string.Join(", ", payload));
-                //        await sess.WriteAsync(payload);
-
-                //        c++;
-
-                //        await Task.Delay(1000);
-                //    }
-
-
-                //    //var c = 0;
-                //    //while (true)
-                //    //{
-                //    //    if (sess != null)
-                //    //    {
-                //    //        try
-                //    //        {
-                //    //            var test = await sess.ReadAsync();
-                //    //            Console.WriteLine("Session read " + c);
-                //    //            c++;
-                //    //            Console.WriteLine(string.Join(", ", test));
-                //    //        }
-                //    //        catch (Exception e)
-                //    //        {
-
-                //    //        }
-                //    //    }
-                //    //}
-                //});
-
                 return Task.FromResult((object)true);
             });
     
@@ -166,6 +86,83 @@ namespace Playground
             client.TextReceived += Client_TextReceived;
 
             Console.ReadKey();
+        }
+
+        private static async Task DialAndSendFile(string address3, MultiClient client)
+        {
+            var session = await client.DialAsync(address3, SessionConfiguration.Default);
+            Console.WriteLine("Session established");
+
+            session.SetLinger(-1);
+
+            var filePath = @"..\..\..\extra.exe";
+            //var filePath = @"..\..\..\large.txt";
+            //var filePath = @"..\..\..\med.pdf";
+            //var filePath = @"..\..\..\small.txt";
+            var file = new FileInfo(filePath);
+            var fileNameEncoded = Encoding.ASCII.GetBytes(file.Name);
+
+            Console.WriteLine("Writing file name length " + fileNameEncoded.Length);
+            await WriteUintToSession(session, (uint)fileNameEncoded.Length);
+            await Task.Delay(200);
+            Console.WriteLine("Writing file name " + fileNameEncoded);
+            await session.WriteAsync(fileNameEncoded);
+            await Task.Delay(200);
+            Console.WriteLine("Writing file length " + file.Length);
+            await WriteUintToSession(session, (uint)file.Length);
+            await Task.Delay(200);
+
+            var sw = Stopwatch.StartNew();
+            var fileBytes = File.ReadAllBytes(filePath);
+            await session.WriteAsync(fileBytes);
+            sw.Stop();
+
+            var kilobytesPerSecond = file.Length / sw.ElapsedMilliseconds;
+
+            Console.WriteLine($"Finished writing file {file.Name} in {sw.Elapsed} with {kilobytesPerSecond} kbps");
+
+            EnsureCorrectSend(session, fileBytes);
+
+            Console.WriteLine("***Finito***");
+            Console.WriteLine("***Finito***");
+            Console.WriteLine("***Finito***");
+        }
+
+        private static void EnsureCorrectSend(Session session, byte[] fileBytes)
+        {
+            try
+            {
+                var queued = session.AllQueued;
+                var offset = queued.Count - fileBytes.Length;
+                for (int i = 0; i < fileBytes.Length; i++)
+                {
+                    if (fileBytes[i] != queued[i + offset])
+                    {
+
+                    }
+                }
+
+                var sent = session.AllSent;
+                for (int i = 0; i < sent.Count; i++)
+                {
+                    if (queued[i] != sent[i])
+                    {
+
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+
+            }
+
+            //for (int i = 0; i < sent.Count; i++)
+            //{
+            //    if (fileBytes[i] != sent[i + offset])
+            //    {
+
+            //    }
+            //}
         }
 
         static void Client_TextReceived(string sender, string text)

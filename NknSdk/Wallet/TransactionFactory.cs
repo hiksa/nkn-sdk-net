@@ -81,28 +81,28 @@ namespace NknSdk.Wallet
             return MakePayload(unsubscribe, PayloadType.Unsubscribe);
         }
 
-        public static Payload MakeNanoPayPayload(string sender, string recipient, ulong id, int nanoPayExpiration, int transactionExpiration)
+        public static Payload MakeNanoPayPayload(string sender, string recipient, long id, long amount, int nanoPayExpiration, int transactionExpiration)
         {
             var nanoPay = new NanoPay
             {
                 Sender = sender.FromHexString(),
                 Recipient = recipient.FromHexString(),
-                Id = id,
+                Id =  (ulong)id,
                 NanoPayExpiration = nanoPayExpiration,
                 TransactionExpiration = transactionExpiration,
-                // TODO: Amount
+                Amount = amount
             };
 
             return MakePayload(nanoPay, PayloadType.NanoPay);
         }
 
-        public static Transaction MakeTransaction(Account account, Payload payload, ulong nonce, decimal fee = 0, string attributes = "")
+        public static Transaction MakeTransaction(Account account, Payload payload, ulong nonce, long fee = 0, string attributes = "")
         {
             var unsigned = new UnsignedTransaction
             {
                 Payload = payload,
                 Nonce = nonce,
-                // TODO: ...
+                Fee =  fee,
                 Attributes = attributes.FromHexString()
             };
 
@@ -138,13 +138,11 @@ namespace NknSdk.Wallet
 
         public static void SignTransaction(Account account, Transaction transaction)
         {
-            // TODO: ...
             var hex = SerializeUnsigned(transaction.UnsignedTransaction);
             var digest = Crypto.Sha256Hex(hex);
-            // TODO:
             var signature = account.Sign(digest.FromHexString());
-            var txHash = Crypto.DoubleSha256(hex);
-            transaction.Hash = txHash;
+
+            transaction.Hash = Crypto.DoubleSha256(hex);
 
             var program = new Program
             {

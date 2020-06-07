@@ -1,7 +1,15 @@
-﻿namespace NknSdk.Client.Model
+﻿using NknSdk.Common;
+
+namespace NknSdk.Client.Model
 {
     public class SendOptions
     {
+        public SendOptions()
+        {
+            this.IsEncrypted = true;
+            this.MessageId = PseudoRandom.RandomBytesAsHexString(Constants.MessageIdLength);
+        }
+
         public int? ResponseTimeout { get; set; }
 
         public bool? IsEncrypted { get; set; }

@@ -45,7 +45,7 @@ namespace Ncp
             if (tasks.Count > 0)
             {
                 tasks
-                    .SelectAsync(cts)
+                    .FirstAsync(cts)
                     .ContinueWith(async task =>
                     {
                         var channel = await task;

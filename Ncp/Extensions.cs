@@ -21,7 +21,6 @@ namespace Ncp
                 }
                 catch (ChannelClosedException)
                 {
-                    await Task.Yield();
                     return default;
                 }
             }, token);
@@ -37,7 +36,6 @@ namespace Ncp
                 }
                 catch (ChannelClosedException)
                 {
-                    await Task.Yield();
                     return channel;
                 }
 
@@ -54,41 +52,7 @@ namespace Ncp
             }, token);
         }
 
-        public static async Task<Channel<T>> SelectChannel<T>(params Channel<T>[] channels)
-        {
-            var cancellationTokenSource = new CancellationTokenSource();
-            
-            var tasksWaitingToRead = channels.Select(async ch => {
-                await ch.Reader.WaitToReadAsync(cancellationTokenSource.Token);
-                return ch;
-            });
-
-            var taskReadyToRead = await Task.WhenAny(tasksWaitingToRead);
-            var channel = await taskReadyToRead;
-
-            cancellationTokenSource.Cancel();
-
-            return channel;
-        }
-
-        public static async Task<Channel<T>> SelectChannel<T>(this IEnumerable<Channel<T>> channels)
-        {
-            var cancellationTokenSource = new CancellationTokenSource();
-
-            var tasksWaitingToRead = channels.Select(async ch => {
-                await ch.Reader.WaitToReadAsync(cancellationTokenSource.Token);
-                return ch;
-            });
-
-            var taskReadyToRead = await Task.WhenAny(tasksWaitingToRead);
-            var channel = await taskReadyToRead;
-
-            cancellationTokenSource.Cancel();
-
-            return channel;
-        }
-
-        public static async Task<Channel<T>> SelectAsync<T>(this IEnumerable<Task<Channel<T>>> tasks, CancellationTokenSource tokenSource = default)
+        public static async Task<Channel<T>> FirstAsync<T>(this IEnumerable<Task<Channel<T>>> tasks, CancellationTokenSource tokenSource = default)
         {
             var task = await Task.WhenAny(tasks);
 
@@ -99,7 +63,7 @@ namespace Ncp
             return channel;
         }
 
-        public static async Task<T> SelectValueAsync<T>(this IEnumerable<Task<T>> tasks, CancellationTokenSource tokenSource = default)
+        public static async Task<T> FirstValueAsync<T>(this IEnumerable<Task<T>> tasks, CancellationTokenSource tokenSource = default)
         {
             try
             {

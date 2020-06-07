@@ -5,6 +5,7 @@ using System.Linq;
 using System.IO;
 using System.IO.Compression;
 using NknSdk.Common.Exceptions;
+using zlib;
 
 namespace NknSdk.Common
 {
@@ -38,73 +39,38 @@ namespace NknSdk.Common
         
         public static byte[] Compress(this byte[] data)
         {
-            const int size = 4096;
-
-            using (var ms = new MemoryStream(data))
-            using (var stream = new GZipStream(ms, CompressionMode.Compress))
+            using (MemoryStream outMemoryStream = new MemoryStream())
+            using (ZOutputStream outZStream = new ZOutputStream(outMemoryStream, zlibConst.Z_DEFAULT_COMPRESSION))
+            using (Stream inMemoryStream = new MemoryStream(data))
             {
-                var buffer = new byte[size];
-                using (var memory = new MemoryStream())
-                {
-                    int count = 0;
-
-                    do
-                    {
-                        try
-                        {
-                            count = ms.Read(buffer, 0, size);
-                            if (count > 0)
-                            {
-                                memory.Write(buffer, 0, count);
-                            }
-                        }
-                        catch (Exception e)
-                        {
-
-                        }
-                    }
-                    while (count > 0);
-
-                    return memory.ToArray();
-                }
+                CopyStream(inMemoryStream, outZStream);
+                outZStream.finish();
+                return outMemoryStream.ToArray();
             }
         }
 
         public static byte[] Decompress(this byte[] gzip)
         {
-            // Create a GZIP stream with decompression mode.
-            // ... Then create a buffer and write into while reading from the GZIP stream.
-            const int size = 4096;
-
-            using (var ms = new MemoryStream(gzip))
-            using (var stream = new GZipStream(ms, CompressionMode.Decompress))
+            using (MemoryStream outMemoryStream = new MemoryStream())
+            using (ZOutputStream outZStream = new ZOutputStream(outMemoryStream))
+            using (Stream inMemoryStream = new MemoryStream(gzip))
             {
-                var buffer = new byte[size];
-
-                using (var memory = new MemoryStream())
-                {
-                    int count = 0;
-
-                    do
-                    {
-                        try
-                        {
-                            count = stream.Read(buffer, 0, size);
-                            if (count > 0)
-                            {
-                                memory.Write(buffer, 0, count);
-                            }
-                        }
-                        catch (Exception e)
-                        {
-
-                        }
-                    }
-                    while (count > 0);
-
-                    return memory.ToArray();
-                }
+                CopyStream(inMemoryStream, outZStream);
+                outZStream.finish();
+                return outMemoryStream.ToArray();
             }
+        }
+
+        private static void CopyStream(Stream input, Stream output)
+        {
+            byte[] buffer = new byte[2000];
+            int len;
+            while ((len = input.Read(buffer, 0, 2000)) > 0)
+            {
+                output.Write(buffer, 0, len);
+            }
+
+            output.Flush();
         }
 
         public static string Base58Encode(this byte[] input)
@@ -240,7 +206,6 @@ namespace NknSdk.Common
                 throw new InvalidArgumentException(message);
             }
         }
-
 
         private static byte DivMod58(byte[] number, int startAt)
         {

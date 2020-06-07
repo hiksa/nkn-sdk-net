@@ -43,7 +43,7 @@ namespace NknSdk.Tests.Ncp
 
             foreach (var item in input)
             {
-                var result = Session.IsSequenceIdBetween(item.Start, item.End, item.Target);
+                var result = Session.IsSequenceInbetween(item.Start, item.End, item.Target);
 
                 Assert.Equal(item.Expected, result);
             }
