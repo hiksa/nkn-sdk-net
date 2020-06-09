@@ -1,42 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using Xunit;
-using NknSdk.Client;
+﻿using Xunit;
+
 using NknSdk.Common;
-using NknSdk.Common.Protobuf.Messages;
-using NknSdk.Common.Protobuf.SignatureChain;
-using NknSdk.Common.Protobuf.Payloads;
-using Rebex.Security.Cryptography;
-using NSec.Cryptography;
+using NknSdk.Common.Extensions;
 
 namespace NknSdk.Tests.Common
 {
-    public class CryptoTests
+    public class HashingTests
     {
         [Fact]
-        public void EncodeHexShouldWorkAsToHexString()
-        {
-            var a = 5;
-
-            var hex = a.EncodeHex();
-
-            Assert.Equal("05", hex);
-        }
-
-        [Fact]
-        public void ByteArrayEncodeHexShouldWorkAsToHexString()
-        {
-            var a = new byte[] { 1, 2, 3 };
-
-            var hex1 = a.EncodeHex();
-            var hex2 = a.ToHexString();
-
-            Assert.Equal(hex2, hex1);
-        }
-
-        [Fact]
-        public void ShouldDecryptCorrectly()
+        public void ShouldDecryptSymmetricCorrectly()
         {
             var expectedMessageBytes = new byte[] { 45, 219, 127, 108, 13, 125, 208, 244, 202, 174, 100, 234, 87, 122, 145, 255, 189, 118, 109, 224, 170, 132, 20, 106, 104, 110, 232, 15, 16, 157, 166, 19 };
             var expectedNonce = new byte[] { 55, 156, 23, 18, 59, 154, 252, 109, 114, 164, 45, 28, 73, 64, 13, 36, 111, 8, 20, 76, 22, 61, 89, 85 };
@@ -51,9 +23,9 @@ namespace NknSdk.Tests.Common
             
             Assert.Equal(expectedSharedKey, sharedKey.ToHexString());
 
-            var result = Crypto.DecryptSymmetric(expectedMessageBytes, expectedNonce, sharedKey);
+            var result = Hash.DecryptSymmetric(expectedMessageBytes, expectedNonce, sharedKey);
             
-            Assert.Equal<IEnumerable<byte>>(expectedResult, result);
+            Assert.Equal(expectedResult, result);
         }
 
         [Fact]
@@ -63,7 +35,7 @@ namespace NknSdk.Tests.Common
 
             var bytesString = "42";
 
-            var hash = Crypto.Sha256Hex(bytesString);
+            var hash = Hash.Sha256Hex(bytesString);
 
             Assert.Equal(expectedHash, hash);
         }
@@ -75,7 +47,7 @@ namespace NknSdk.Tests.Common
 
             var bytesString = "42";
 
-            var hash = Crypto.DoubleSha256(bytesString);
+            var hash = Hash.DoubleSha256(bytesString);
 
             Assert.Equal(expectedHash, hash);
         }
@@ -84,12 +56,12 @@ namespace NknSdk.Tests.Common
         public void Sha256Hex_Should_CalculateCorrectly()
         {
             var password = "123";
-            var passwordHash = Crypto.DoubleSha256(password);
+            var passwordHash = Hash.DoubleSha256(password);
             var expectedPasswordHash = "5a77d1e9612d350b3734f6282259b7ff0a3f87d62cfef5f35e91a5604c0490a3";
 
             Assert.Equal(passwordHash, expectedPasswordHash);
 
-            var sha256Hash = Crypto.Sha256Hex(expectedPasswordHash);
+            var sha256Hash = Hash.Sha256Hex(expectedPasswordHash);
             var expectedSha256Hash = "3180b4071170db0ae9f666167ed379f53468463f152e3c3cfb57d1de45fd01d6";
 
             Assert.Equal(expectedSha256Hash, sha256Hash);

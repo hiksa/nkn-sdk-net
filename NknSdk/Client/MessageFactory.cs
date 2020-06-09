@@ -1,13 +1,13 @@
-﻿using NknSdk.Common;
+﻿using System.Collections.Generic;
+using System.Linq;
+
+using NknSdk.Common;
 using NknSdk.Common.Exceptions;
+using NknSdk.Common.Extensions;
 using NknSdk.Common.Protobuf;
 using NknSdk.Common.Protobuf.Messages;
 using NknSdk.Common.Protobuf.Payloads;
 using NknSdk.Common.Protobuf.SignatureChain;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
 
 namespace NknSdk.Client
 {
@@ -105,7 +105,8 @@ namespace NknSdk.Client
 
             var signatureChainElement = new SignatureChainElement();
             signatureChainElement.NextPublicKey = client.RemoteNode.Publickey.FromHexString();
-            var signatureChainElementSerialized = EncodeSignatureChainElement(signatureChainElement);
+
+            var signatureChainElementSerialized = signatureChainElement.EncodeHex();
 
             var signatureChain = new SignatureChain
             {
@@ -114,9 +115,9 @@ namespace NknSdk.Client
                 SourcePublicKey = client.PublicKey.FromHexString()
             };
 
-            if (!string.IsNullOrWhiteSpace(client?.signatureChainBlockHash))
+            if (!string.IsNullOrWhiteSpace(client.SignatureChainBlockHash))
             {
-                signatureChain.BlockHash = client.signatureChainBlockHash.FromHexString();
+                signatureChain.BlockHash = client.SignatureChainBlockHash.FromHexString();
             }
 
             var signatures = new List<byte[]>();
@@ -125,6 +126,7 @@ namespace NknSdk.Client
             {
                 signatureChain.DestinationId = Client.AddressToId(destinations[i]).FromHexString();
                 signatureChain.DestinationPublicKey = Client.AddressToPublicKey(destinations[i]).FromHexString();
+
                 if (payloads.Count > 1)
                 {
                     signatureChain.DataSize = (uint)payloads[i].Length;
@@ -134,10 +136,10 @@ namespace NknSdk.Client
                     signatureChain.DataSize = (uint)payloads[0].Length;
                 }
 
-                var hex = EncodeSignatureChainMetadata(signatureChain);
+                var hex = signatureChain.EncodeHex();
 
-                var digest = Crypto.Sha256Hex(hex);
-                digest = Crypto.Sha256Hex(digest + signatureChainElementSerialized);
+                var digest = Hash.Sha256Hex(hex);
+                digest = Hash.Sha256Hex(digest + signatureChainElementSerialized);
 
                 var signature = client.Key.Sign(digest.FromHexString());
                 signatures.Add(signature);
@@ -157,17 +159,18 @@ namespace NknSdk.Client
                 ? CompressionType.Zlib
                 : CompressionType.None;
 
-            var clientMessage = MakeClientMessage(ClientMessageType.OutboundMessage, message.ToBytes(), compressionType);
+            var messageBytes = message.ToBytes();
 
-            return clientMessage;
+            return MessageFactory.MakeClientMessage(ClientMessageType.OutboundMessage, messageBytes, compressionType);
         }
 
         public static ClientMessage MakeReceipt(CryptoKey key, string previousSignatureHex)
         {
             var signatureChainElement = new SignatureChainElement();
-            var serialized = EncodeSignatureChainElement(signatureChainElement);
-            var digest = Crypto.Sha256Hex(previousSignatureHex);
-            digest = Crypto.Sha256Hex(digest + serialized);
+            var serialized = signatureChainElement.EncodeHex();
+
+            var digest = Hash.Sha256Hex(previousSignatureHex);
+            digest = Hash.Sha256Hex(digest + serialized);
 
             var signature = key.Sign(digest.FromHexString());
 
@@ -177,34 +180,9 @@ namespace NknSdk.Client
                 Signature = signature
             };
 
-            var receiptSerialized = receipt.ToBytes();
-            var message = MakeClientMessage(ClientMessageType.Receipt, receiptSerialized, CompressionType.None);
+            var receiptBytes = receipt.ToBytes();
 
-            return message;
-        }
-
-        public static string EncodeSignatureChainMetadata(SignatureChain signatureChain)
-        {
-            var result = "";
-            result += signatureChain.Nonce.EncodeHex();
-            result += signatureChain.DataSize.EncodeHex();
-            result += signatureChain.BlockHash.EncodeHex();
-            result += signatureChain.SourceId.EncodeHex();
-            result += signatureChain.SourcePublicKey.EncodeHex();
-            result += signatureChain.DestinationId.EncodeHex();
-            result += signatureChain.DestinationPublicKey.EncodeHex();
-
-            return result;
-        }
-
-        public static string EncodeSignatureChainElement(SignatureChainElement element)
-        {
-            var result = "";
-            result += element.Id.EncodeHex();
-            result += element.NextPublicKey.EncodeHex();
-            result += element.IsMining.EncodeHex();
-
-            return result;
+            return MessageFactory.MakeClientMessage(ClientMessageType.Receipt, receiptBytes, CompressionType.None);
         }
     }
 }

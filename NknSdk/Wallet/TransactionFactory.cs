@@ -1,6 +1,5 @@
-﻿using System.Text;
-
-using NknSdk.Common;
+﻿using NknSdk.Common;
+using NknSdk.Common.Extensions;
 using NknSdk.Common.Protobuf;
 using NknSdk.Common.Protobuf.Transaction;
 
@@ -17,7 +16,7 @@ namespace NknSdk.Wallet
                 Amount = amount
             };
 
-            return MakePayload(transfer, PayloadType.TransferAsset);
+            return TransactionFactory.MakePayload(transfer, PayloadType.TransferAsset);
         }
 
         public static Payload MakeRegisterNamePayload(string registrant, string name, long registrationFee)
@@ -29,7 +28,7 @@ namespace NknSdk.Wallet
                 RegistrationFee = registrationFee
             };
 
-            return MakePayload(registerName, PayloadType.RegisterName);
+            return TransactionFactory.MakePayload(registerName, PayloadType.RegisterName);
         }
 
         public static Payload MakeTransferNamePayload(string name, string registrant, string recipient)
@@ -41,7 +40,7 @@ namespace NknSdk.Wallet
                 Registrant = registrant.FromHexString()
             };
 
-            return MakePayload(transferName, PayloadType.TransferName);
+            return TransactionFactory.MakePayload(transferName, PayloadType.TransferName);
         }
 
         public static Payload MakeDeleteNamePayload(string registrant, string name)
@@ -52,7 +51,7 @@ namespace NknSdk.Wallet
                 Registrant = registrant.FromHexString()
             };
 
-            return MakePayload(deleteName, PayloadType.DeleteName);
+            return TransactionFactory.MakePayload(deleteName, PayloadType.DeleteName);
         }
 
         public static Payload MakeSubscribePayload(string subscriber, string identifier, string topic, int duration, string meta)
@@ -66,7 +65,7 @@ namespace NknSdk.Wallet
                 Meta = meta
             };
 
-            return MakePayload(subscribe, PayloadType.Subscribe);
+            return TransactionFactory.MakePayload(subscribe, PayloadType.Subscribe);
         }
 
         public static Payload MakeUnsubscribePayload(string subscriber, string identifier, string topic)
@@ -78,7 +77,7 @@ namespace NknSdk.Wallet
                 Topic = topic
             };
 
-            return MakePayload(unsubscribe, PayloadType.Unsubscribe);
+            return TransactionFactory.MakePayload(unsubscribe, PayloadType.Unsubscribe);
         }
 
         public static Payload MakeNanoPayPayload(string sender, string recipient, long id, long amount, int nanoPayExpiration, int transactionExpiration)
@@ -93,7 +92,7 @@ namespace NknSdk.Wallet
                 Amount = amount
             };
 
-            return MakePayload(nanoPay, PayloadType.NanoPay);
+            return TransactionFactory.MakePayload(nanoPay, PayloadType.NanoPay);
         }
 
         public static Transaction MakeTransaction(Account account, Payload payload, ulong nonce, long fee = 0, string attributes = "")
@@ -111,38 +110,18 @@ namespace NknSdk.Wallet
                 UnsignedTransaction = unsigned
             };
 
-            SignTransaction(account, transaction);
+            TransactionFactory.SignTransaction(account, transaction);
 
             return transaction;
         }
 
-        public static string SerializePayload(Payload payload)
-        {
-            var result = ((int)payload.Type).EncodeHex();
-            result += payload.Data.EncodeHex();
-
-            return result;
-        }
-
-        public static string SerializeUnsigned(UnsignedTransaction unsigned)
-        {
-            // TODO: ...
-            var sb = new StringBuilder();
-            sb.Append(SerializePayload(unsigned.Payload));
-            sb.Append(unsigned.Nonce.EncodeHex());
-            sb.Append(unsigned.Fee.EncodeHex());
-            sb.Append(unsigned.Attributes.EncodeHex());
-
-            return sb.ToString();
-        }
-
         public static void SignTransaction(Account account, Transaction transaction)
         {
-            var hex = SerializeUnsigned(transaction.UnsignedTransaction);
-            var digest = Crypto.Sha256Hex(hex);
-            var signature = account.Sign(digest.FromHexString());
+            var hex = transaction.UnsignedTransaction.EncodeHex();
+            transaction.Hash = Hash.DoubleSha256(hex);
 
-            transaction.Hash = Crypto.DoubleSha256(hex);
+            var digest = Hash.Sha256Hex(hex);
+            var signature = account.Sign(digest.FromHexString());
 
             var program = new Program
             {

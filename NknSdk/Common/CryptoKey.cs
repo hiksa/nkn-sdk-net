@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text;
 using NknSdk.Common.Exceptions;
+using NknSdk.Common.Extensions;
 using NknSdk.Common.Protobuf.Payloads;
 using NSec;
 using NSec.Cryptography;
@@ -11,18 +13,14 @@ namespace NknSdk.Common
 {
     public class CryptoKey
     {
-        private readonly byte[] privateKey;
-        private byte[] curvePrivateKey;
-        private IDictionary<string, byte[]> SharedKeyCache;
-        private Key realKey;
+        private readonly IDictionary<string, byte[]> sharedKeyCache;
+        private readonly CryptoKeyInfo keyInfo;
 
-        public CryptoKey()
-            : this(PseudoRandom.RandomBytes(Crypto.SeedLength))
+        public CryptoKey() : this(PseudoRandom.RandomBytes(Hash.SeedLength))
         {
         }
 
-        public CryptoKey(string seed)
-            : this(seed.FromHexString())
+        public CryptoKey(string seed) : this(seed.FromHexString())
         {
         }
 
@@ -41,30 +39,24 @@ namespace NknSdk.Common
             }
             else
             {
-                this.Seed = PseudoRandom.RandomBytesAsHexString(Crypto.SeedLength);
+                this.Seed = PseudoRandom.RandomBytesAsHexString(Hash.SeedLength);
             }
 
-            this.SharedKeyCache = new Dictionary<string, byte[]>();
+            this.sharedKeyCache = new ConcurrentDictionary<string, byte[]>();
 
-            var keyPair = Crypto.MakeKeyPair(seed);
-
-            this.realKey = keyPair.RealKey;
-            this.PublicKey = keyPair.PublicKey;
-            this.privateKey = keyPair.PrivateKey;
-            this.curvePrivateKey = keyPair.CurvePrivateKey;
+            this.keyInfo = CryptoKeyInfo.FromSeed(seed);
         }
 
-        public string PublicKey { get; }
+        public string PublicKey => this.keyInfo.PublicKey;
 
         public string Seed { get; }
 
         public (byte[] Message, byte[] Nonce) Encrypt(byte[] message, string destinationPublicKey)
         {
-            var nonce = PseudoRandom.RandomBytes(Crypto.NonceLength);
-            //var nonce = new byte[] { 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1 };
+            var nonce = PseudoRandom.RandomBytes(Hash.NonceLength);
 
             var sharedKey = this.GetSharedSecret(destinationPublicKey);
-            var encrypted = Crypto.EncryptSymmetric(message, nonce, sharedKey);
+            var encrypted = Hash.EncryptSymmetric(message, nonce, sharedKey);
 
             return (encrypted, nonce);
         }
@@ -72,27 +64,27 @@ namespace NknSdk.Common
         public byte[] Decrypt(byte[] message, byte[] nonce, string sourcePublicKey)
         {
             var sharedKey = this.GetSharedSecret(sourcePublicKey);
-            return Crypto.DecryptSymmetric(message, nonce, sharedKey);
+
+            return Hash.DecryptSymmetric(message, nonce, sharedKey);
         }
 
         public byte[] Sign(byte[] message)
         {
             var algorithm = SignatureAlgorithm.Ed25519;
-            var signed = algorithm.Sign(this.realKey, message);
 
-            return signed;
+            return algorithm.Sign(this.keyInfo.Key, message);
         }
 
         public byte[] GetSharedSecret(string otherPublicKey)
         {
-            if (this.SharedKeyCache.ContainsKey(otherPublicKey))
+            if (this.sharedKeyCache.ContainsKey(otherPublicKey))
             {
-                return this.SharedKeyCache[otherPublicKey];
+                return this.sharedKeyCache[otherPublicKey];
             }
             else
             {
-                var sharedKey = Chaos.NaCl.Ed25519.KeyExchange(otherPublicKey.FromHexString(), this.privateKey);
-                this.SharedKeyCache[otherPublicKey] = sharedKey;
+                var sharedKey = Chaos.NaCl.Ed25519.KeyExchange(otherPublicKey.FromHexString(), this.keyInfo.PrivateKey);
+                this.sharedKeyCache[otherPublicKey] = sharedKey;
                 return sharedKey;
             }
         }

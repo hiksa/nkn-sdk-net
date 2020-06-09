@@ -38,17 +38,27 @@ namespace NknSdk.Tests.Ncp
         [Fact]
         public void Should_Select_CorrectValue()
         {
-            //var firstChannel = Channel.CreateBounded<uint?>(1);
-            //firstChannel.Writer.WriteAsync(5)
-            //    .GetAwaiter()
-            //    .GetResult();
+            uint value = 5;
+            var firstChannel = Channel.CreateBounded<uint?>(1);
+            firstChannel
+                .Writer
+                .WriteAsync(value)
+                .GetAwaiter()
+                .GetResult();
 
-            //var cts = new CancellationTokenSource();
+            var cts = new CancellationTokenSource();
+            var channelTasks = new List<Task<uint?>>
+            {
+                firstChannel.ShiftValue(cts.Token),
+                Constants.ClosedChannel.ShiftValue(cts.Token)
+            };
 
-            //var value = Extensions
-            //    .SelectValueAsync(firstChannel, Constants.ClosedChannel)
-            //    .GetAwaiter()
-            //    .GetResult();
+            var result = channelTasks
+                .FirstValueAsync(cts)
+                .GetAwaiter()
+                .GetResult();
+
+            Assert.Equal(value, result.GetValueOrDefault());
         }
     }
 }

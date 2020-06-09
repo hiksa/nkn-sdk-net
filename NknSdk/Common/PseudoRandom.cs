@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
+
+using NknSdk.Common.Extensions;
 
 namespace NknSdk.Common
 {
@@ -17,15 +17,13 @@ namespace NknSdk.Common
         {
             var result = new byte[length];
 
-            //Array.Fill<byte>(result, 1);
             random.NextBytes(result);
 
             return result;
         }
 
-        public static string RandomBytesAsHexString(int length) => RandomBytes(length).ToHexString();
+        public static string RandomBytesAsHexString(int length) => PseudoRandom.RandomBytes(length).ToHexString();
 
-        //public static int RandomInt() => 1;
         public static int RandomInt(int min = 0, int max = int.MaxValue) => random.Next(min, max);
 
         public static long RandomLong(long min = 0, long max = long.MaxValue)

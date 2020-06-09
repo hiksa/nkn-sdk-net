@@ -133,15 +133,15 @@ namespace Ncp
         
         private async Task SendDataAsync()
         {
-            uint seq = 0;
+            uint sequenceId = 0;
             while (true)
             {
-                if (seq == 0)
+                if (sequenceId == 0)
                 {
-                    seq = await this.session.GetResendSequenceAsync();
+                    sequenceId = await this.session.GetResendSequenceAsync();
                 }
 
-                if (seq == 0)
+                if (sequenceId == 0)
                 {
                     try
                     {
@@ -157,31 +157,31 @@ namespace Ncp
                         throw e;
                     }
 
-                    var nextSendSequence = await this.session.GetSendSequenceAsync();
+                    var nextSendSequenceId = await this.session.GetSendSequenceAsync();
 
-                    seq = nextSendSequence.Value;
+                    sequenceId = nextSendSequenceId.Value;
                 }
 
-                var buffer = this.session.GetDataToSend(seq);
+                var buffer = this.session.GetDataToSend(sequenceId);
                 if (buffer == null)
                 {
-                    this.timeSentSeq.Remove(seq);
-                    this.resentSeq.Remove(seq);
-                    seq = 0;
+                    this.timeSentSeq.Remove(sequenceId);
+                    this.resentSeq.Remove(sequenceId);
+
+                    sequenceId = 0;
+
                     continue;
                 }
 
                 try
                 {
-                    //this.session.Test.AddRange(buffer);
                     var packet = ProtoSerializer.Deserialize<Packet>(buffer);
-                    this.session.Buffers.TryAdd(seq, packet.Data);
-                    if (packet.SequenceId != seq)
+                    if (packet.SequenceId != sequenceId)
                     {
                         throw new Exception("sequence missmatch");
                     }
 
-                    Console.WriteLine($"Sending session message. Packet Id: {seq}, Data Length: {packet.Data.Length}, Data: {string.Join(", ", packet.Data.Take(10))}");
+                    Console.WriteLine($"Sending session message. Packet Id: {sequenceId}, Data Length: {packet.Data.Length}, Data: {string.Join(", ", packet.Data.Take(10))}");
                     await this.session.SendWithAsync(this.LocalClientId, this.RemoteClientId, buffer);
                 }
                 catch (Exception e)
@@ -194,14 +194,14 @@ namespace Ncp
                     var cts = new CancellationTokenSource();
                     var channelTasks = new List<Task<Channel<uint?>>>
                     {
-                        this.session.resendChannel.Push(seq, cts.Token),
+                        this.session.resendChannel.Push(sequenceId, cts.Token),
                         this.session.Context.Done.Shift(cts.Token)
                     };
 
                     var channel = await channelTasks.FirstAsync(cts);
                     if (channel == this.session.resendChannel)
                     {
-                        seq = 0;
+                        sequenceId = 0;
                         break;
                     }
                     else if (channel == this.session.Context.Done)
@@ -213,14 +213,14 @@ namespace Ncp
                     continue;
                 }
 
-                if (this.timeSentSeq.ContainsKey(seq) == false)
+                if (this.timeSentSeq.ContainsKey(sequenceId) == false)
                 {
-                    this.timeSentSeq.Add(seq, DateTime.Now);
+                    this.timeSentSeq.Add(sequenceId, DateTime.Now);
                 }
 
-                this.resentSeq.Remove(seq);
+                this.resentSeq.Remove(sequenceId);
 
-                seq = 0;
+                sequenceId = 0;
             }
         }
 

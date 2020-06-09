@@ -6,7 +6,7 @@ using System.Text;
 namespace Ncp.Protobuf
 {
     [ProtoContract]
-    public class Packet2
+    public class Packet
     {
         [ProtoMember(1)]
         public uint SequenceId { get; set; }
@@ -15,16 +15,17 @@ namespace Ncp.Protobuf
         public byte[] Data { get; set; }
 
         [ProtoMember(3, IsPacked = true)]
+
         public uint[] AckStartSeqs { get; set; }
 
         [ProtoMember(4, IsPacked = true)]
-        public uint[] AckSeqCount { get; set; }
+        public uint[] AckSeqCounts { get; set; }
 
         [ProtoMember(5)]
         public ulong BytesRead { get; set; }
 
         [ProtoMember(6)]
-        public string[] ClientIds { get; set; }
+        public IList<string> ClientIds { get; set; }
 
         [ProtoMember(7)]
         public uint WindowSize { get; set; }

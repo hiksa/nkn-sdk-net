@@ -1,5 +1,6 @@
 ﻿using System.Threading.Tasks;
 
+using Norgerman.Cryptography.Scrypt;
 using Utf8Json;
 
 using NknSdk.Common;
@@ -7,15 +8,17 @@ using NknSdk.Common.Protobuf.Transaction;
 using NknSdk.Common.Rpc;
 using NknSdk.Common.Exceptions;
 using NknSdk.Common.Rpc.Results;
-using Norgerman.Cryptography.Scrypt;
-using System.Linq;
-using Google.Protobuf.WellKnownTypes;
-using Microsoft.Extensions.Options;
+using NknSdk.Common.Extensions;
 
 namespace NknSdk.Wallet
 {
     public class Wallet
     {
+        public const int NameRegistrationFee = 10;
+        public const int DefaultVersion = 1;
+        public const int MinCompatibleVersion = 1;
+        public const int MaxCompatibleVersion = 2;
+
         private readonly Account account;
         private readonly string address;
         private readonly string programHash;
@@ -28,13 +31,13 @@ namespace NknSdk.Wallet
 
         public Wallet(WalletOptions options)
         {
-            this.version = options.Version ?? Constants.Version;
+            this.version = options.Version ?? Wallet.DefaultVersion;
 
             switch (this.version)
             {
                 case 2:
-                    this.scryptParams = Constants.DefaultScryptParams;
-                    this.scryptParams.Salt = this.scryptParams.Salt ?? PseudoRandom.RandomBytesAsHexString(this.scryptParams.SaltLength);
+                    this.scryptParams = new ScryptParams();
+                    this.scryptParams.Salt ??= PseudoRandom.RandomBytesAsHexString(this.scryptParams.SaltLength);
                     break;
                 default:
                     break;
@@ -58,13 +61,16 @@ namespace NknSdk.Wallet
             var account = new Account(options.SeedHex);
 
             var iv = options.Iv ?? PseudoRandom.RandomBytesAsHexString(16);
-            var masterKeyHex = options.MasterKey?.ToHexString() ?? PseudoRandom.RandomBytesAsHexString(16);
+            var masterKeyHex = string.IsNullOrWhiteSpace(options.MasterKey) 
+                ? PseudoRandom.RandomBytesAsHexString(16) 
+                : options.MasterKey;
 
             this.options = options;
             this.account = account;
             this.iv = iv;
             this.address = this.account.Address;
             this.programHash = this.account.ProgramHash;
+
             this.masterKey = Aes.Encrypt(masterKeyHex, passwordKey, iv.FromHexString());
             this.seedEncrypted = Aes.Encrypt(options.SeedHex, masterKeyHex, iv.FromHexString());
         }
@@ -77,7 +83,7 @@ namespace NknSdk.Wallet
         {
             options.Iv = wallet.Iv;
             options.MasterKey = Aes.Decrypt(wallet.MasterKey, options.PasswordKey, options.Iv.FromHexString());
-            options.SeedHex = Aes.Decrypt(wallet.SeedEncrypted, options.MasterKey.ToHexString(), options.Iv.FromHexString()).ToHexString();
+            options.SeedHex = Aes.Decrypt(wallet.SeedEncrypted, options.MasterKey, options.Iv.FromHexString());
             options.PasswordKeys.Add(wallet.Version.Value, options.PasswordKey);
 
             switch (wallet.Version)
@@ -123,6 +129,9 @@ namespace NknSdk.Wallet
         public static Wallet FromJson(string json, WalletOptions options)
         {
             var wallet = ParseAndValidateWalletJson(json);
+
+            // TODO: ....
+            options = WalletOptions.FromWalletJson(wallet);
 
             var computeOptions = WalletOptions.FromWalletJson(wallet);
             computeOptions.Password = options.Password;
@@ -238,19 +247,15 @@ namespace NknSdk.Wallet
         }
 
         public Task<GetSubscriptionResult> GetSubscription(string topic, string subscriber)
-        {
-            return RpcClient.GetSubscription(this.options.RpcServer, topic, subscriber);
-        }
-
-        public static Task<object> GetBalance(string address, WalletOptions options)
+            => RpcClient.GetSubscription(this.options.RpcServer, topic, subscriber);
+        
+        public static Task<GetBalanceResult> GetBalance(string address, WalletOptions options)
         {
             return RpcClient.GetBalanceByAddress(options.RpcServer, address);
         }
 
         public static Task<GetNonceByAddrResult> GetNonce(string address, WalletOptions options)
-        {
-            return  RpcClient.GetNonceByAddress(options.RpcServer, address);
-        }
+            => RpcClient.GetNonceByAddress(options.RpcServer, address);
 
         public Task<GetNonceByAddrResult> GetNonceAsync() => Wallet.GetNonce(this.account.Address, this.options);
 
@@ -289,7 +294,7 @@ namespace NknSdk.Wallet
 
             var payload = TransactionFactory.MakeNanoPayPayload(
                 this.programHash,
-                Address.AddressStringToProgramHash(toAddress),
+                Address.ToProgramHash(toAddress),
                 id.Value,
                 new Amount(amount).Value,
                 expiration,
@@ -299,13 +304,19 @@ namespace NknSdk.Wallet
         }
 
         public Transaction CreateTransaction(Payload payload, ulong nonce, WalletOptions options)
-            => TransactionFactory.MakeTransaction(this.account, payload, nonce, options.Fee.GetValueOrDefault(), options.Attributes);
+            => TransactionFactory.MakeTransaction(
+                this.account, 
+                payload, 
+                nonce, 
+                options.Fee.GetValueOrDefault(), 
+                options.Attributes);
 
         public static string PublicKeyToAddress(string publicKey)
         {
             var signatureRedeem = Address.PublicKeyToSignatureRedeem(publicKey);
             var programHash = Address.HexStringToProgramHash(signatureRedeem);
-            var result = Address.ProgramHashStringToAddress(programHash);
+            var result = Address.FromProgramHash(programHash);
+
             return result;
         }
 
@@ -318,9 +329,7 @@ namespace NknSdk.Wallet
 
             switch (options.Version.Value)
             {
-                case 1:
-
-                    return await Task.Run(() => Crypto.DoubleSha256(options.Password));
+                case 1: return await Task.Run(() => Hash.DoubleSha256(options.Password));
 
                 case 2:
 
@@ -352,8 +361,7 @@ namespace NknSdk.Wallet
 
             switch (options.Version.Value)
             {
-                case 1:
-                    return Crypto.DoubleSha256(options.Password);
+                case 1: return Hash.DoubleSha256(options.Password);
 
                 case 2:
 
@@ -367,16 +375,17 @@ namespace NknSdk.Wallet
 
                     return scrypt.ToHexString();
 
-                default:
-                    throw new System.Exception();
+                default: throw new System.Exception();
             }
         }
 
         private bool VerifyPasswordKey(string passwordKey)
         {
             var masterKey = Aes.Decrypt(this.masterKey, passwordKey, this.iv.FromHexString());
-            var seed = Aes.Decrypt(this.seedEncrypted, masterKey.ToHexString(), this.iv.FromHexString());
-            var account = new Account(seed.ToHexString());
+            var seed = Aes.Decrypt(this.seedEncrypted, masterKey, this.iv.FromHexString());
+
+            var account = new Account(seed);
+
             return account.Address == this.address;
         }
 
@@ -384,11 +393,13 @@ namespace NknSdk.Wallet
         {
             var wallet = JsonSerializer.Deserialize<WalletJson>(json);
 
-            if (wallet.Version == null || wallet.Version < Constants.MinCompatibleVersion || wallet.Version > Constants.MaxCompatibleVersion)
+            if (wallet.Version == null 
+                || wallet.Version < Wallet.MinCompatibleVersion 
+                || wallet.Version > Wallet.MaxCompatibleVersion)
             {
                 throw new InvalidWalletVersionException(
                     $"Invalid wallet version {wallet.Version}. " +
-                    $"Should be between {Constants.MinCompatibleVersion} and {Constants.MaxCompatibleVersion}");
+                    $"Should be between {Wallet.MinCompatibleVersion} and {Wallet.MaxCompatibleVersion}");
             }
 
             if (string.IsNullOrWhiteSpace(wallet.MasterKey))

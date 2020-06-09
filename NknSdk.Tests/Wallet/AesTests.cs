@@ -1,15 +1,14 @@
-﻿using NknSdk.Wallet;
-using NknSdk.Common;
-using System;
-using System.Collections.Generic;
-using System.Text;
+﻿using System;
+
 using Xunit;
+
+using NknSdk.Wallet;
+using NknSdk.Common.Extensions;
 
 namespace NknSdk.Tests.Wallet
 {
     public class AesTests
     {
-
         [Fact]
         public void ShouldEncryptCorrectly()
         {
@@ -25,9 +24,49 @@ namespace NknSdk.Tests.Wallet
         }
 
         [Fact]
+        public void ShouldEncryptCorrectly2()
+        {
+            var plainText = "f40bc0903ae5064ec225a82d1ca8ca6c63d4ecf2c41689b82fc6bf581ea3b67b";
+            var password = "2b593d352785eee69106325f56014ddf8724ab6403ca30d7bb62a964b41b688d";
+            var iv = "e989169aa3f1d8ac191e211549fd5de6";
+
+            var encrypted = Aes.Encrypt(plainText, password, iv.FromHexString());
+
+            var expected = "9a406f5c6b3212cc43af7ba2cda841afcf29f2643cabf8b76247b912f7dbe73f";
+
+            Assert.Equal(expected, encrypted);
+        }
+
+        [Fact]
         public void ShouldDecryptCorrectly()
         {
+            var ciphertext = "689066ba1b5fe6cd89f7836b3bec608c4b2c5491ec637a05ffd8913a62082708";
+            var password = "15c6eb523e497a59925b9a15a8b62cf0f7f95538524c87856f9ed2df5c79f92f";
+            var iv = "af937f5dee6595dd1fe3c75454169294";
 
+            var expected = "b4d5ac923dcf82aa2174a5cea4f2ab732f73944f875222ea2d1c55f5e6fb9219";
+
+            var decrypted = Aes.Decrypt(ciphertext, password, iv.FromHexString());
+
+            Assert.Equal(expected, decrypted);
+        }
+
+        [Fact]
+        public void ShouldDecryptCorrectly2()
+        {
+            var ciphertext = "9a406f5c6b3212cc43af7ba2cda841afcf29f2643cabf8b76247b912f7dbe73f";
+            var ciphertextBase64 = "mkBvXGsyEsxDr3uizahBr88p8mQ8q/i3Yke5Evfb5z8=";
+
+            Assert.Equal(ciphertext.FromHexString(), Convert.FromBase64String(ciphertextBase64));
+
+            var password = "2b593d352785eee69106325f56014ddf8724ab6403ca30d7bb62a964b41b688d";
+            var iv = "e989169aa3f1d8ac191e211549fd5de6";
+
+            var expected = "f40bc0903ae5064ec225a82d1ca8ca6c63d4ecf2c41689b82fc6bf581ea3b67b";
+
+            var decrypted = Aes.Decrypt(ciphertext, password, iv.FromHexString());
+
+            Assert.Equal(expected, decrypted);
         }
     }
 }

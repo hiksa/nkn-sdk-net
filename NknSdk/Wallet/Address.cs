@@ -4,31 +4,39 @@ using System.Linq;
 using System.Text;
 using Microsoft.VisualBasic;
 using NknSdk.Common;
+using NknSdk.Common.Extensions;
 
 namespace NknSdk.Wallet
 {
     public static class Address
     {
+        public const string Prefix = "02b825";
+        public const int Uint160Length = 20;
+        public const int CheckSumLength = 4;
+
+        public static readonly int PrefixLength = Address.Prefix.Length / 2;
+        public static readonly int FullLength = Address.PrefixLength + Address.Uint160Length + Address.CheckSumLength;
+
         public static bool IsCorrectAddress(string address)
         {
             try
             {
                 var addressBytes = address.Base58Decode();
-                if (addressBytes.Length != Constants.AddressLength)
+                if (addressBytes.Length != Address.FullLength)
                 {
                     return false;
                 }
 
-                var addressPrefixBytes = new ArraySegment<byte>(addressBytes, 0, Constants.AddressPrefixLength);
-                var addressPrefix = addressPrefixBytes.ToArray().ToHexString();
-                if (addressPrefix != Constants.AddressPrefix)
+                var addressPrefixBytes = new ArraySegment<byte>(addressBytes, 0, Address.PrefixLength).ToArray();
+                var addressPrefix = addressPrefixBytes.ToHexString();
+                if (addressPrefix != Address.Prefix)
                 {
                     return false;
                 }
 
-                var programHash = AddressStringToProgramHash(address);
-                var addressVerificationCode = GetAddressVerificationCode(address);
-                var programHashVerificationCode = GenerateAddressVerificationCodeFromProgramHash(programHash);
+                var programHash = Address.ToProgramHash(address);
+                var addressVerificationCode = Address.GetVerificationCodeFromAddress(address);
+                var programHashVerificationCode = Address.GetVerificationCodeFromProgramHash(programHash);
 
                 return addressVerificationCode == programHashVerificationCode;
             }
@@ -38,27 +46,15 @@ namespace NknSdk.Wallet
             }
         }
 
-        public static string PublicKeyToSignatureRedeem(string publicKey)
-            => $"20{publicKey}ac";
+        public static string PublicKeyToSignatureRedeem(string publicKey) => $"20{publicKey}ac";
 
         public static string HexStringToProgramHash(string hexString)
         {
-            var sha256hash = Crypto.Sha256Hex(hexString);
+            var sha256hash = Hash.Sha256Hex(hexString);
 
-            var result = Crypto.Ripemd160Hex(sha256hash);
+            var result = Hash.Ripemd160Hex(sha256hash);
 
             return result.ToHexString();
-        }
-
-        public static string ProgramHashStringToAddress(string programHash)
-        {
-            var addressVerifyBytes = GenerateAddressVerificationBytesFromProgramHash(programHash);
-            
-            var addressBaseData = (Constants.AddressPrefix + programHash).FromHexString();
-            
-            var result = addressBaseData.Concat(addressVerifyBytes);
-            
-            return result.Base58Encode();
         }
 
         public static string SignatureToParameter(string hex) => "40" + hex;
@@ -87,44 +83,59 @@ namespace NknSdk.Wallet
             return byteCountHex + hex;
         }
 
-        public static string AddressStringToProgramHash(string address)
+        public static string ToProgramHash(string address)
         {
             var addressBytes = address.Base58Decode();
             
-            var bytesToTake = addressBytes.Length - Constants.AddressPrefixLength - Constants.CheckSumLength;
+            var bytesToTake = addressBytes.Length - Address.PrefixLength - Address.CheckSumLength;
             
-            var programHashBytes = new ArraySegment<byte>(addressBytes, Constants.AddressPrefixLength, bytesToTake);
+            var programHashBytes = new ArraySegment<byte>(addressBytes, Address.PrefixLength, bytesToTake).ToArray();
             
-            return programHashBytes.ToArray().ToHexString();
+            return programHashBytes.ToHexString();
         }
 
-        private static string GetAddressVerificationCode(string address)
+        public static string FromProgramHash(string programHash)
+        {
+            var addressVerifyBytes = Address.GetVerificationBytesFromProgramHash(programHash);
+
+            var prefixedProgramHash = Address.Prefix + programHash;
+
+            var addressBaseData = prefixedProgramHash.FromHexString();
+
+            var result = addressBaseData.Concat(addressVerifyBytes);
+
+            return result.Base58Encode();
+        }
+
+        private static string GetVerificationCodeFromAddress(string address)
         {
             var addressBytes = address.Base58Decode();
 
-            var verificationBytes = new ArraySegment<byte>(addressBytes, addressBytes.Length - Constants.CheckSumLength, Constants.CheckSumLength);
+            var offset = addressBytes.Length - Address.CheckSumLength;
+
+            var verificationBytes = new ArraySegment<byte>(addressBytes, offset, Address.CheckSumLength).ToArray();
             
-            return verificationBytes.ToArray().ToHexString();
+            return verificationBytes.ToHexString();
         }
 
-        private static byte[] GenerateAddressVerificationBytesFromProgramHash(string programHash)
+        private static byte[] GetVerificationBytesFromProgramHash(string programHash)
         {
-            var prefixedProgramHash = Constants.AddressPrefix + programHash;
+            var prefixedProgramHash = Address.Prefix + programHash;
 
             var prefixedProgramHashBytes = prefixedProgramHash.FromHexString();
 
-            var programHashHex = Crypto.DoubleSha256(prefixedProgramHashBytes);
+            var programHashHex = Hash.DoubleSha256(prefixedProgramHashBytes);
 
             var verificationBytes = programHashHex.FromHexString();
 
-            var addressVerificationBytes = verificationBytes.Take(Constants.CheckSumLength).ToArray();
+            var addressVerificationBytes = verificationBytes.Take(Address.CheckSumLength).ToArray();
 
             return addressVerificationBytes;
         }
 
-        private static string GenerateAddressVerificationCodeFromProgramHash(string programHash)
+        private static string GetVerificationCodeFromProgramHash(string programHash)
         {
-            var verificationBytes = GenerateAddressVerificationBytesFromProgramHash(programHash);
+            var verificationBytes = Address.GetVerificationBytesFromProgramHash(programHash);
             
             return verificationBytes.ToHexString();
         }

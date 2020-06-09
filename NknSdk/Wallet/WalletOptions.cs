@@ -1,7 +1,4 @@
-﻿using NknSdk.Common;
-using NknSdk.Common.Exceptions;
-using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 
 namespace NknSdk.Wallet
 {
@@ -11,6 +8,7 @@ namespace NknSdk.Wallet
         {
             this.RpcServer = "https://mainnet-rpc-node-0001.nkn.org/mainnet/api/wallet";
             this.Password = "";
+            this.Version = Wallet.DefaultVersion;
 
             this.PasswordKeys = new Dictionary<int, string>();
         }
@@ -21,7 +19,7 @@ namespace NknSdk.Wallet
 
         public string RpcServer { get; set; }
 
-        public byte[] MasterKey { get; set; }
+        public string MasterKey { get; set; }
 
         public string Iv { get; set; }
 
@@ -35,25 +33,18 @@ namespace NknSdk.Wallet
 
         public long? Fee { get; set; }
 
-        public bool BuildOnly { get; set; }
-
         public string Attributes { get; set; }
 
         public IDictionary<int, string> PasswordKeys { get; set; }
 
         public ScryptParams Scrypt { get; set; }
 
-        public static WalletOptions Default { get; } = new WalletOptions
-        {
-            RpcServer = "https://mainnet-rpc-node-0001.nkn.org/mainnet/api/wallet"
-        };
-
         public static WalletOptions FromWalletJson(WalletJson wallet)
         {
             return new WalletOptions
             {
                 Iv = wallet.Iv,
-                MasterKey = wallet.MasterKey.FromHexString(),
+                MasterKey = wallet.MasterKey,
                 Version = wallet.Version,
                 Scrypt = wallet.Scrypt,
             };

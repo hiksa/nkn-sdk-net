@@ -4,7 +4,7 @@ namespace NknSdk.Client
 {
     public class Constants
     {
-        public const string RpcServerAddress = "http://mainnet-seed-0001.nkn.org:30003";
+        public const string RpcServerAddress = "https://mainnet-rpc-node-0001.nkn.org/mainnet/api/wallet";
 
         public const int MessageIdLength = 8;
 

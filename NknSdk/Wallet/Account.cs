@@ -1,8 +1,4 @@
 ﻿using NknSdk.Common;
-using System;
-using System.Collections.Generic;
-using System.Text;
-using static NknSdk.Wallet.Address;
 
 namespace NknSdk.Wallet
 {
@@ -14,10 +10,10 @@ namespace NknSdk.Wallet
         {
             this.key = new CryptoKey(seedHex);
 
-            this.SignatureRedeem = PublicKeyToSignatureRedeem(this.key.PublicKey);
-            this.ProgramHash = HexStringToProgramHash(this.SignatureRedeem);
-            this.Address = ProgramHashStringToAddress(this.ProgramHash);
-            this.Contract = GenerageAccountContractString(this.SignatureRedeem, this.ProgramHash);
+            this.SignatureRedeem = NknSdk.Wallet.Address.PublicKeyToSignatureRedeem(this.key.PublicKey);
+            this.ProgramHash = NknSdk.Wallet.Address.HexStringToProgramHash(this.SignatureRedeem);
+            this.Address = NknSdk.Wallet.Address.FromProgramHash(this.ProgramHash);
+            this.Contract = Account.GenerateAccountContractString(this.SignatureRedeem, this.ProgramHash);
         }
 
         public string SignatureRedeem { get; }
@@ -34,10 +30,11 @@ namespace NknSdk.Wallet
 
         public byte[] Sign(byte[] message) => this.key.Sign(message);
 
-        private string GenerageAccountContractString(string signatureRedeem, string programHash)
+        private static string GenerateAccountContractString(string signatureRedeem, string programHash)
         {
-            var contract = PrefixByteCountToHexString(signatureRedeem);
-            contract += PrefixByteCountToHexString("00");
+            var contract = NknSdk.Wallet.Address.PrefixByteCountToHexString(signatureRedeem);
+
+            contract += NknSdk.Wallet.Address.PrefixByteCountToHexString("00");
             contract += programHash;
 
             return contract;

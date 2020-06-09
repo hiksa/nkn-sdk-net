@@ -17,8 +17,7 @@ namespace NknSdk.Tests.Common
             var otherPublicKey = "7ade8659d490283303beb2f224cff1f3709364ce6765a7132d65ed1a6e10ecf9";
 
             var sharedSecret = key.GetSharedSecret(otherPublicKey);
-            var expectedSharedSecret = new byte[] { 6, 64, 52, 108, 146, 127, 50, 182, 72, 214, 157, 195, 104, 69, 154, 41, 175, 17, 58, 20, 213, 139, 252, 129, 133, 
-                8, 15, 154, 224, 136, 229, 104 };
+            var expectedSharedSecret = new byte[] { 6, 64, 52, 108, 146, 127, 50, 182, 72, 214, 157, 195, 104, 69, 154, 41, 175, 17, 58, 20, 213, 139, 252, 129, 133, 168, 15, 154, 224, 136, 229, 104 };
 
             Assert.Equal(expectedSharedSecret, sharedSecret);
         }
@@ -97,8 +96,8 @@ namespace NknSdk.Tests.Common
             var expectedSharedKey = new byte[] { 0, 158, 251, 248, 227, 69, 237, 180, 214, 4, 221, 192, 22, 179, 47, 147, 26, 235, 107, 104, 0, 212, 11, 128, 240, 45, 233, 103, 194, 72, 176, 18 };
             var expectedDecryptedPayload = new byte[] { 18, 8, 219, 37, 78, 203, 52, 33, 59, 229, 26, 3, 1, 2, 3 };
 
-            var actualSharedKey = key.Decrypt(encryptedKey, nonce.Take(Crypto.NonceLength).ToArray(), sourcePublicKey);
-            var actualDecryptedPayload = Crypto.DecryptSymmetric(rawPayload, nonce.Skip(Crypto.NonceLength).ToArray(), actualSharedKey);
+            var actualSharedKey = key.Decrypt(encryptedKey, nonce.Take(Hash.NonceLength).ToArray(), sourcePublicKey);
+            var actualDecryptedPayload = Hash.DecryptSymmetric(rawPayload, nonce.Skip(Hash.NonceLength).ToArray(), actualSharedKey);
             
             Assert.Equal(expectedSharedKey, actualSharedKey);
             Assert.Equal(expectedDecryptedPayload, actualDecryptedPayload);

@@ -2,14 +2,24 @@
 {
     public class SessionConfiguration
     {
-        static SessionConfiguration()
+        public SessionConfiguration()
         {
-            Default = CreateDefault();
+            this.CheckBytesReadInterval = Constants.DefaultCheckBytesReadInterval;
+            this.CheckTimeoutInterval = Constants.DefaultCheckTimeoutInterval;
+            this.FlushInterval = Constants.DefaultFlushInterval;
+            this.InitialConnectionWindowSize = Constants.DefaultInitialConnectionWindowSize;
+            this.InitialRetransmissionTimeout = Constants.DefaultInitialRetransmissionTimeout;
+            this.Linger = Constants.DefaultLinger;
+            this.MaxAckSeqListSize = Constants.DefaultMaxAckSeqListSize;
+            this.MaxConnectionWindowSize = Constants.DefaultMaxConnectionWindowSize;
+            this.MaxRetransmissionTimeout = Constants.DefaultMaxRetransmissionTimeout;
+            this.MinConnectionWindowSize = Constants.DefaultMinConnectionWindowSize;
+            this.Mtu = Constants.DefaultMtu;
+            this.NonStream = Constants.DefaultNonStream;
+            this.SendAckInterval = Constants.DefaultSendAckInterval;
+            this.SendBytesReadThreshold = Constants.DefaultSendBytesReadThreshold;
+            this.SessionWindowSize = (int)Constants.DefaultSessionWindowSize;
         }
-
-        private SessionConfiguration() { }
-
-        public static SessionConfiguration Default { get; }
 
         public int Mtu { get; set; }
 
@@ -40,26 +50,6 @@
         public int SessionWindowSize { get; set; }
 
         public bool NonStream { get; set; }
-
-        private static SessionConfiguration CreateDefault()
-            => new SessionConfiguration
-            {
-                CheckBytesReadInterval = Constants.DefaultCheckBytesReadInterval,
-                CheckTimeoutInterval = Constants.DefaultCheckTimeoutInterval,
-                FlushInterval = Constants.DefaultFlushInterval,
-                InitialConnectionWindowSize = Constants.DefaultInitialConnectionWindowSize,
-                InitialRetransmissionTimeout = Constants.DefaultInitialRetransmissionTimeout,
-                Linger = Constants.DefaultLinger,
-                MaxAckSeqListSize = Constants.DefaultMaxAckSeqListSize,
-                MaxConnectionWindowSize = Constants.DefaultMaxConnectionWindowSize,
-                MaxRetransmissionTimeout = Constants.DefaultMaxRetransmissionTimeout,
-                MinConnectionWindowSize = Constants.DefaultMinConnectionWindowSize,
-                Mtu = Constants.DefaultMtu,
-                NonStream = Constants.DefaultNonStream,
-                SendAckInterval = Constants.DefaultSendAckInterval,
-                SendBytesReadThreshold = Constants.DefaultSendBytesReadThreshold,
-                SessionWindowSize = (int)Constants.DefaultSessionWindowSize
-            };
 
         public SessionConfiguration WithMtu(int mtu)
         {

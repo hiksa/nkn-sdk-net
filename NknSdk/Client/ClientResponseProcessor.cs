@@ -1,28 +1,26 @@
 ﻿using System;
-using NknSdk.Common;
-using static NknSdk.Client.Handlers;
+using System.Threading.Channels;
+
+using NknSdk.Common.Extensions;
 
 namespace NknSdk.Client
 {
-    public class ClientResponseProcessor
+    public class ClientResponseProcessor<T>
     {
         private readonly DateTime? deadline;
 
-        private readonly ResponseHandler responseHandler;
-        private readonly TimeoutHandler timeoutHandler;
+        private readonly Channel<T> responseChannel;
 
         public ClientResponseProcessor(
             byte[] messageId,
             int? timeout,
-            ResponseHandler responseHandler,
-            TimeoutHandler timeoutHandler)
-            : this(messageId.ToHexString(), timeout, responseHandler, timeoutHandler) { }
+            Channel<T> responseChannel)
+            : this(messageId.ToHexString(), timeout, responseChannel) { }
 
         public ClientResponseProcessor(
             string messageId, 
-            int? timeout, 
-            ResponseHandler responseHandler, 
-            TimeoutHandler timeoutHandler)
+            int? timeout,
+            Channel<T> responseChannel)
         {
             this.MessageId = messageId;
 
@@ -31,8 +29,7 @@ namespace NknSdk.Client
                 this.deadline = DateTime.Now.AddMilliseconds(timeout.Value);
             }
 
-            this.responseHandler = responseHandler;
-            this.timeoutHandler = timeoutHandler;
+            this.responseChannel = responseChannel;
         }
 
         public string MessageId { get; }
@@ -54,12 +51,12 @@ namespace NknSdk.Client
 
         public void HandleResponse(object data)
         {
-            this.responseHandler?.Invoke(data);
+            this.responseChannel.Writer.WriteAsync((T)data);
         }
 
         public void HandleTimeout()
         {
-            this.timeoutHandler?.Invoke("Message timeout");
+            //this.timeoutHandler?.Invoke("Message timeout");
         }
     }
 }

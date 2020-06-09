@@ -5,13 +5,11 @@ VisualStudioVersion = 16.0.29709.97
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NknSdk", "NknSdk\NknSdk.csproj", "{81B69091-9BAA-4C2C-87F7-8CFA9D3644A3}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Playground", "Playground\Playground.csproj", "{A4BE195E-ECFF-4CFC-99AA-A99E6A1FFD7F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Playground", "Playground\Playground.csproj", "{A4BE195E-ECFF-4CFC-99AA-A99E6A1FFD7F}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Ncp", "Ncp\Ncp.csproj", "{1748FA9E-02B2-444F-932C-BE50897ACD5A}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Ncp", "Ncp\Ncp.csproj", "{1748FA9E-02B2-444F-932C-BE50897ACD5A}"
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "NknSdk.Tests", "NknSdk.Tests\NknSdk.Tests.csproj", "{54AFF271-3B41-44F0-99AA-5F673B2C1AD9}"
-EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FunWithChannels", "..\FunWithChannels\FunWithChannels.csproj", "{99F5F745-92D9-4D05-A407-6A6D2E826737}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -35,10 +33,6 @@ Global
 		{54AFF271-3B41-44F0-99AA-5F673B2C1AD9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{54AFF271-3B41-44F0-99AA-5F673B2C1AD9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{54AFF271-3B41-44F0-99AA-5F673B2C1AD9}.Release|Any CPU.Build.0 = Release|Any CPU
-		{99F5F745-92D9-4D05-A407-6A6D2E826737}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{99F5F745-92D9-4D05-A407-6A6D2E826737}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{99F5F745-92D9-4D05-A407-6A6D2E826737}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{99F5F745-92D9-4D05-A407-6A6D2E826737}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

@@ -13,7 +13,7 @@ namespace Ncp
     public class Context
     {
         private readonly Channel<uint?> cancelChannel;
-        private readonly Task timeoutTask;
+        private readonly Timer timeoutTimer;
 
         private Context(Context parent = null, bool cancel = false, int timeout = 0)
         {
@@ -40,6 +40,7 @@ namespace Ncp
             {
                 timeoutChan = timeout.ToTimeoutChannel();
                 tasks.Add(timeoutChan.Shift(cts.Token));
+                this.timeoutTimer = new Timer((state) => timeoutChan.Writer.Complete(), new object { }, timeout, Timeout.Infinite);
             }
 
             if (tasks.Count > 0)
@@ -65,7 +66,7 @@ namespace Ncp
                         await this.Done.CompleteAsync();
                         await this.CancelAsync();
 
-                        this.timeoutTask.Dispose();
+                        this.timeoutTimer.Dispose();
                     });
             }
         }

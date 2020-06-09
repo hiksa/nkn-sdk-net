@@ -13,6 +13,7 @@ using NknSdk.Common.Exceptions;
 using NknSdk.Wallet;
 using System.Runtime.CompilerServices;
 using WebSocketSharp;
+using NknSdk.Common.Extensions;
 
 namespace NknSdk.Common.Rpc
 {
@@ -78,13 +79,15 @@ namespace NknSdk.Common.Rpc
             return await CallRpc<GetSubscriptionResult>(nodeUri, "getsubscription", parameters);
         }
 
-        public static async Task<object> GetBalanceByAddress(string nodeUri, string address)
+        public static async Task<GetBalanceResult> GetBalanceByAddress(string nodeUri, string address)
         {
             address.ThrowIfNullOrEmpty("remoteAddress is empty");
 
             var parameters = new { address };
 
-            return await CallRpc<object>(nodeUri, "getbalancebyaddr", parameters);
+            var rawResult = await CallRpc<GetBalanceRpcResult>(nodeUri, "getbalancebyaddr", parameters);
+
+            return new GetBalanceResult { Amount = decimal.Parse(rawResult.Amount), Address = address };
         }
 
         public static async Task<GetNonceByAddrResult> GetNonceByAddress(string nodeUri, string address)
@@ -127,9 +130,13 @@ namespace NknSdk.Common.Rpc
             }
 
             var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();
+            
             var signatureRedeem = Address.PublicKeyToSignatureRedeem(wallet.PublicKey);
+            
             var programHash = Address.HexStringToProgramHash(signatureRedeem);
-            var payload = TransactionFactory.MakeTransferPayload(programHash, Address.AddressStringToProgramHash(toAddress), amount);
+            
+            var payload = TransactionFactory.MakeTransferPayload(programHash, Address.ToProgramHash(toAddress), amount);
+            
             var tx = wallet.CreateTransaction(payload, nonce, options);
 
             return await wallet.SendTransactionAsync(tx);
@@ -137,8 +144,8 @@ namespace NknSdk.Common.Rpc
 
         public static async Task<string> RegisterName(string name, Wallet.Wallet wallet, WalletOptions options)
         {
-            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();
-            var payload = TransactionFactory.MakeRegisterNamePayload(wallet.PublicKey, name, options.Fee.GetValueOrDefault());
+            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();            
+            var payload = TransactionFactory.MakeRegisterNamePayload(wallet.PublicKey, name, options.Fee.GetValueOrDefault());            
             var tx = wallet.CreateTransaction(payload, nonce, options);
 
             return await wallet.SendTransactionAsync(tx);
@@ -146,8 +153,8 @@ namespace NknSdk.Common.Rpc
 
         public static async Task<string> TransferName(string name, string recipient, Wallet.Wallet wallet, WalletOptions options)
         {
-            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();
-            var payload = TransactionFactory.MakeTransferNamePayload(name, wallet.PublicKey, recipient);
+            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();            
+            var payload = TransactionFactory.MakeTransferNamePayload(name, wallet.PublicKey, recipient);            
             var tx = wallet.CreateTransaction(payload, nonce, options);
 
             return await wallet.SendTransactionAsync(tx);
@@ -239,6 +246,11 @@ namespace NknSdk.Common.Rpc
             }
 
             throw new InvalidResponseException("rpc response contains no result or error field");
+        }
+
+        public class GetBalanceRpcResult
+        {
+            public string Amount { get; set; }
         }
     }
 }

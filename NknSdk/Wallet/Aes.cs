@@ -1,10 +1,8 @@
-﻿using NknSdk.Common;
-using System;
-using System.Collections.Generic;
+﻿using System;
 using System.IO;
-using System.Linq;
 using System.Security.Cryptography;
-using System.Text;
+
+using NknSdk.Common.Extensions;
 
 namespace NknSdk.Wallet
 {
@@ -12,98 +10,93 @@ namespace NknSdk.Wallet
     {
         public static string Encrypt(string plainText, string password, byte[] iv)
         {
-            return EncryptStringToBytes_Aes(plainText, password.FromHexString(), iv).ToHexString();
+            return EncryptStringToBytesAes(plainText, password.FromHexString(), iv).ToHexString();
         }
 
-        public static byte[] Decrypt(string cipherText, string password, byte[] iv)
+        public static string Decrypt(string cipherText, string password, byte[] iv)
         {
-            return DecryptStringFromBytes_Aes(cipherText.FromHexString(), password.FromHexString(), iv).FromHexString();
+            var bytes = cipherText.FromHexString();
+
+            return DecryptStringFromBytesAes(bytes, password.FromHexString(), iv);
         }
 
-        static byte[] EncryptStringToBytes_Aes(string plainText, byte[] Key, byte[] IV)
+        private static byte[] EncryptStringToBytesAes(string plainText, byte[] key, byte[] iv)
         {
-            // Check arguments.
             if (plainText == null || plainText.Length <= 0)
+            {
                 throw new ArgumentNullException("plainText");
-            if (Key == null || Key.Length <= 0)
+            }
+
+            if (key == null || key.Length <= 0)
+            {
                 throw new ArgumentNullException("Key");
-            if (IV == null || IV.Length <= 0)
+            }
+
+            if (iv == null || iv.Length <= 0)
+            {
                 throw new ArgumentNullException("IV");
+            }
 
             var data = plainText.FromHexString();
 
-            // Create an Aes object
-            // with the specified key and IV.
-            using (System.Security.Cryptography.Aes aesAlg = System.Security.Cryptography.Aes.Create())
+            using (System.Security.Cryptography.Aes aes = System.Security.Cryptography.Aes.Create())
             {
-                aesAlg.Padding = PaddingMode.None;
-                aesAlg.Mode = CipherMode.CBC;
-                aesAlg.Key = Key;
-                aesAlg.IV = IV;
+                aes.Padding = PaddingMode.None;
+                aes.Mode = CipherMode.CBC;
+                aes.Key = key;
+                aes.IV = iv;
 
-                // Create an encryptor to perform the stream transform.
-                ICryptoTransform encryptor = aesAlg.CreateEncryptor(aesAlg.Key, aesAlg.IV);
+                var encryptor = aes.CreateEncryptor(aes.Key, aes.IV);
 
-                // Create the streams used for encryption.
                 using (var msEncrypt = new MemoryStream())
+                using (var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
                 {
-                    using (var csEncrypt = new CryptoStream(msEncrypt, encryptor, CryptoStreamMode.Write))
-                    {
-                        csEncrypt.Write(data, 0, data.Length);
-                        //using (StreamWriter swEncrypt = new StreamWriter(csEncrypt, Encoding.Default))
-                        //{
-                        //    //Write all data to the stream.
-                        //    swEncrypt.Write(plainText);
-                        //}
-                        return msEncrypt.ToArray();
-                    }
+                    csEncrypt.Write(data, 0, data.Length);
+
+                    return msEncrypt.ToArray();
                 }
             }
         }
 
-        static string DecryptStringFromBytes_Aes(byte[] cipherText, byte[] Key, byte[] IV)
+        public static object Decrypt(string ciphertext, string password, object p)
         {
-            // Check arguments.
+            throw new NotImplementedException();
+        }
+
+        private static string DecryptStringFromBytesAes(byte[] cipherText, byte[] key, byte[] iv)
+        {
             if (cipherText == null || cipherText.Length <= 0)
-                throw new ArgumentNullException("cipherText");
-            if (Key == null || Key.Length <= 0)
-                throw new ArgumentNullException("Key");
-            if (IV == null || IV.Length <= 0)
-                throw new ArgumentNullException("IV");
-
-            // Declare the string used to hold
-            // the decrypted text.
-            string plaintext = null;
-
-            // Create an Aes object
-            // with the specified key and IV.
-            using (System.Security.Cryptography.Aes aesAlg = System.Security.Cryptography.Aes.Create())
             {
-                aesAlg.Key = Key;
-                aesAlg.IV = IV;
-                aesAlg.Padding = PaddingMode.None;
-                aesAlg.Mode = CipherMode.CBC;
-
-                // Create a decryptor to perform the stream transform.
-                ICryptoTransform decryptor = aesAlg.CreateDecryptor(aesAlg.Key, aesAlg.IV);
-
-                // Create the streams used for decryption.
-                using (MemoryStream msDecrypt = new MemoryStream(cipherText))
-                {
-                    using (CryptoStream csDecrypt = new CryptoStream(msDecrypt, decryptor, CryptoStreamMode.Read))
-                    {
-                        using (StreamReader srDecrypt = new StreamReader(csDecrypt))
-                        {
-
-                            // Read the decrypted bytes from the decrypting stream
-                            // and place them in a string.
-                            plaintext = srDecrypt.ReadToEnd();
-                        }
-                    }
-                }
+                throw new ArgumentNullException("cipherText");
             }
 
-            return plaintext;
+            if (key == null || key.Length <= 0)
+            {
+                throw new ArgumentNullException("Key");
+            }
+
+            if (iv == null || iv.Length <= 0)
+            {
+                throw new ArgumentNullException("IV");
+            }
+
+            using (System.Security.Cryptography.Aes aes = System.Security.Cryptography.Aes.Create())
+            {
+                aes.Padding = PaddingMode.None;
+                aes.Mode = CipherMode.CBC;
+                aes.Key = key;
+                aes.IV = iv;
+
+                using (var output = new MemoryStream())                
+                using (var decryptor = aes.CreateDecryptor(aes.Key, aes.IV))
+                using (var ms = new MemoryStream(cipherText))
+                using (var cs = new CryptoStream(ms, decryptor, CryptoStreamMode.Read))
+                {
+                    cs.CopyTo(output);
+
+                    return output.ToArray().ToHexString();
+                }
+            }
         }
     }
 }

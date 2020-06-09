@@ -1,7 +1,4 @@
 ﻿using NknSdk.Common.Protobuf.Payloads;
-using System;
-using System.Collections.Generic;
-using System.Text;
 
 namespace NknSdk.Client.Model
 {

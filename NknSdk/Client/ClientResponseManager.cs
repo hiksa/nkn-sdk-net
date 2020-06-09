@@ -1,4 +1,5 @@
 ﻿using NknSdk.Common;
+using NknSdk.Common.Extensions;
 using NknSdk.Common.Protobuf.Payloads;
 using System;
 using System.Collections;
@@ -7,17 +8,17 @@ using System.Collections.Generic;
 
 namespace NknSdk.Client
 {
-    public class ClientResponseManager
+    public class ClientResponseManager<T>
     {
-        private readonly IDictionary<string, ClientResponseProcessor> responseProcessors;
+        private readonly IDictionary<string, ClientResponseProcessor<T>> responseProcessors;
         // TODO: add timer
 
         public ClientResponseManager()
         {
-            this.responseProcessors = new ConcurrentDictionary<string, ClientResponseProcessor>();
+            this.responseProcessors = new ConcurrentDictionary<string, ClientResponseProcessor<T>>();
         }
 
-        public void Add(ClientResponseProcessor processor)
+        public void Add(ClientResponseProcessor<T> processor)
         {
             this.responseProcessors.Add(processor.MessageId, processor);
         }
@@ -57,8 +58,9 @@ namespace NknSdk.Client
 
         public void CheckTimeout()
         {
-            var expiredProcessors = new List<ClientResponseProcessor>();
+            var expiredProcessors = new List<ClientResponseProcessor<T>>();
             var now = DateTime.Now;
+
             foreach (var processor in this.responseProcessors.Values)
             {
                 if (processor.HasExpired(now))

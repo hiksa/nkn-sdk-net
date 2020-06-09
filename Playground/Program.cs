@@ -25,43 +25,28 @@ namespace Playground
             var seed4 = "16735a849deaa136ba6030c3695c4cbdc9b275d5d9a9f46b836841ab4a36179e";
             var address4 = "7ade8659d490283303beb2f224cff1f3709364ce6765a7132d65ed1a6e10ecf9";
 
-            var test = new Amount(5);
-            Console.WriteLine(test.Value);
+            var wallet = new Wallet(new WalletOptions { SeedHex = seed1, Version = 1 });
+            var walletJson = wallet.ToJson();
 
-            var options = MultiClientOptions.Default;
-            options.NumberOfSubClients = 1;
+            var test = Wallet.FromJson(walletJson, new WalletOptions());
+
+            var options = new MultiClientOptions();
+            options.NumberOfSubClients = 4;
             options.ResponseTimeout = 500_000;
             options.Seed = seed1;
 
-            var sessionConfig = SessionConfiguration.Default;
-
             var client = new MultiClient(options);
 
-
             var connected = false;
-            client.Connected += async (object sender, EventArgs args) =>
+
+            client.OnConnect(async (request) => 
             {
-                Console.WriteLine("***Connected***");
-                if (connected)
-                {
-                    return;
-                }
+                Console.WriteLine(request.Address);
 
-                await client.Send(
-                    new List<string> { address2, address3 }, 
-                    new byte[] { 4, 3, 1 }, 
-                    new SendOptions(),
-                    (response) => Console.WriteLine(string.Join(",", (byte[])response))
-                    );
+                var response = await client.SendToManyAsync(new List<string> { address2, address3 }, new byte[] { 42 });
 
-
-
-                connected = true;
-
-                //client.Listen(new string[] { address2 });
-
-                //await DialAndSendFile(address3, client);
-            };
+                Console.WriteLine(string.Join(",", response));
+            });
 
             client.OnMessage(request =>
             {
@@ -69,7 +54,7 @@ namespace Playground
                 Console.WriteLine("Remote address: " + request.Source);
                 Console.WriteLine("Data type: " + request.PayloadType.ToString());
                 Console.WriteLine("Data: " + string.Join(", ", request.Payload));
-                return Task.FromResult((object)new byte[] { 1, 2 });
+                return Task.FromResult((object)new byte[] { 1, 2, 3, 4, 5, 6, 7 });
             });
 
             Session sess = null;
@@ -80,17 +65,13 @@ namespace Playground
 
                 return Task.FromResult((object)true);
             });
-    
-            client.DataReceived += Client_DataReceived;
-
-            client.TextReceived += Client_TextReceived;
 
             Console.ReadKey();
         }
 
         private static async Task DialAndSendFile(string address3, MultiClient client)
         {
-            var session = await client.DialAsync(address3, SessionConfiguration.Default);
+            var session = await client.DialAsync(address3, new SessionConfiguration());
             Console.WriteLine("Session established");
 
             session.SetLinger(-1);
@@ -130,31 +111,31 @@ namespace Playground
 
         private static void EnsureCorrectSend(Session session, byte[] fileBytes)
         {
-            try
-            {
-                var queued = session.AllQueued;
-                var offset = queued.Count - fileBytes.Length;
-                for (int i = 0; i < fileBytes.Length; i++)
-                {
-                    if (fileBytes[i] != queued[i + offset])
-                    {
+            //try
+            //{
+            //    var queued = session.AllQueued;
+            //    var offset = queued.Count - fileBytes.Length;
+            //    for (int i = 0; i < fileBytes.Length; i++)
+            //    {
+            //        if (fileBytes[i] != queued[i + offset])
+            //        {
 
-                    }
-                }
+            //        }
+            //    }
 
-                var sent = session.AllSent;
-                for (int i = 0; i < sent.Count; i++)
-                {
-                    if (queued[i] != sent[i])
-                    {
+            //    var sent = session.AllSent;
+            //    for (int i = 0; i < sent.Count; i++)
+            //    {
+            //        if (queued[i] != sent[i])
+            //        {
 
-                    }
-                }
-            }
-            catch (Exception e)
-            {
+            //        }
+            //    }
+            //}
+            //catch (Exception e)
+            //{
 
-            }
+            //}
 
             //for (int i = 0; i < sent.Count; i++)
             //{
@@ -163,18 +144,6 @@ namespace Playground
 
             //    }
             //}
-        }
-
-        static void Client_TextReceived(string sender, string text)
-        {
-            Console.WriteLine($"Text messege received from: {sender}");
-            Console.WriteLine($"Text contents: {text}");
-        }
-
-        static void Client_DataReceived(string sender, byte[] data)
-        {
-            Console.WriteLine("Data received. Length: " + data.Length);
-            Console.WriteLine("[ " + string.Join(", ", data) + " ]");
         }
 
         static async Task WriteUintToSession(Session session, uint value)

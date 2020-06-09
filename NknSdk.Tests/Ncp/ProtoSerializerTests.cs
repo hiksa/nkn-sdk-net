@@ -21,7 +21,7 @@ namespace NknSdk.Tests.Ncp
 
             foreach (var item in input)
             {
-                var packet = new Packet2
+                var packet = new Packet
                 {
                     AckStartSeqs = item.AckStartSeqList,
                     BytesRead = item.BytesRead

@@ -3,7 +3,6 @@ using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Text;
 
 namespace Ncp
 {
@@ -15,8 +14,8 @@ namespace Ncp
         IProducerConsumerCollection<KeyValuePair<TKey, TValue>>
         where TKey : IComparable<TKey>
     {
-        private readonly object _syncLock = new object();
-        private readonly MinBinaryHeap _minHeap = new MinBinaryHeap();
+        private readonly object syncLock = new object();
+        private readonly MinBinaryHeap minHeap = new MinBinaryHeap();
 
         /// <summary>Initializes a new instance of the ConcurrentPriorityQueue class.</summary>
         public ConcurrentPriorityQueue()
@@ -31,7 +30,7 @@ namespace Ncp
 
             foreach (var item in collection)
             {
-                _minHeap.Insert(item);
+                this.minHeap.Insert(item);
             }
         }
 
@@ -40,16 +39,16 @@ namespace Ncp
         /// <param name="value">The item to be added.</param>
         public void Enqueue(TKey priority, TValue value)
         {
-            Enqueue(new KeyValuePair<TKey, TValue>(priority, value));
+            this.Enqueue(new KeyValuePair<TKey, TValue>(priority, value));
         }
 
         /// <summary>Adds the key/value pair to the priority queue.</summary>
         /// <param name="item">The key/value pair to be added to the queue.</param>
         public void Enqueue(KeyValuePair<TKey, TValue> item)
         {
-            lock (_syncLock)
+            lock (this.syncLock)
             {
-                _minHeap.Insert(item);
+                this.minHeap.Insert(item);
             }
         }
 
@@ -64,11 +63,11 @@ namespace Ncp
         public bool TryDequeue(out KeyValuePair<TKey, TValue> result)
         {
             result = default(KeyValuePair<TKey, TValue>);
-            lock (_syncLock)
+            lock (this.syncLock)
             {
-                if (_minHeap.Count > 0)
+                if (this.minHeap.Count > 0)
                 {
-                    result = _minHeap.Remove();
+                    result = this.minHeap.Remove();
                     return true;
                 }
             }
@@ -87,11 +86,11 @@ namespace Ncp
         public bool TryPeek(out KeyValuePair<TKey, TValue> result)
         {
             result = default(KeyValuePair<TKey, TValue>);
-            lock (_syncLock)
+            lock (this.syncLock)
             {
-                if (_minHeap.Count > 0)
+                if (this.minHeap.Count > 0)
                 {
-                    result = _minHeap.Peek();
+                    result = this.minHeap.Peek();
                     return true;
                 }
             }
@@ -102,26 +101,23 @@ namespace Ncp
         /// <summary>Empties the queue.</summary>
         public void Clear()
         {
-            lock (_syncLock)
+            lock (this.syncLock)
             {
-                _minHeap.Clear();
+                this.minHeap.Clear();
             }
         }
 
         /// <summary>Gets whether the queue is empty.</summary>
-        public bool IsEmpty
-        {
-            get { return Count == 0; }
-        }
+        public bool IsEmpty => this.Count == 0;
 
         /// <summary>Gets the number of elements contained in the queue.</summary>
         public int Count
         {
             get
             {
-                lock (_syncLock)
+                lock (this.syncLock)
                 {
-                    return _minHeap.Count;
+                    return this.minHeap.Count;
                 }
             }
         }
@@ -136,9 +132,9 @@ namespace Ncp
         /// <remarks>The elements will not be copied to the array in any guaranteed order.</remarks>
         public void CopyTo(KeyValuePair<TKey, TValue>[] array, int index)
         {
-            lock (_syncLock)
+            lock (this.syncLock)
             {
-                _minHeap.Items.CopyTo(array, index);
+                this.minHeap.Items.CopyTo(array, index);
             }
         }
 
@@ -146,10 +142,10 @@ namespace Ncp
         /// <returns>A new array containing a snapshot of elements copied from the queue.</returns>
         public KeyValuePair<TKey, TValue>[] ToArray()
         {
-            lock (_syncLock)
+            lock (this.syncLock)
             {
-                var clonedHeap = new MinBinaryHeap(_minHeap);
-                var result = new KeyValuePair<TKey, TValue>[_minHeap.Count];
+                var clonedHeap = new MinBinaryHeap(this.minHeap);
+                var result = new KeyValuePair<TKey, TValue>[this.minHeap.Count];
                 for (int i = 0; i < result.Length; i++)
                 {
                     result[i] = clonedHeap.Remove();
@@ -166,7 +162,7 @@ namespace Ncp
         /// </returns>
         bool IProducerConsumerCollection<KeyValuePair<TKey, TValue>>.TryAdd(KeyValuePair<TKey, TValue> item)
         {
-            Enqueue(item);
+            this.Enqueue(item);
             return true;
         }
 
@@ -180,7 +176,7 @@ namespace Ncp
         /// </returns>
         bool IProducerConsumerCollection<KeyValuePair<TKey, TValue>>.TryTake(out KeyValuePair<TKey, TValue> item)
         {
-            return TryDequeue(out item);
+            return this.TryDequeue(out item);
         }
 
         /// <summary>Returns an enumerator that iterates through the collection.</summary>
@@ -192,7 +188,7 @@ namespace Ncp
         /// </remarks>
         public IEnumerator<KeyValuePair<TKey, TValue>> GetEnumerator()
         {
-            var arr = ToArray();
+            var arr = this.ToArray();
             return ((IEnumerable<KeyValuePair<TKey, TValue>>)arr).GetEnumerator();
         }
 
@@ -200,7 +196,7 @@ namespace Ncp
         /// <returns>An IEnumerator that can be used to iterate through the collection.</returns>
         IEnumerator IEnumerable.GetEnumerator()
         {
-            return GetEnumerator();
+            return this.GetEnumerator();
         }
 
         /// <summary>Copies the elements of the collection to an array, starting at a particular array index.</summary>
@@ -212,37 +208,31 @@ namespace Ncp
         /// </param>
         void ICollection.CopyTo(Array array, int index)
         {
-            lock (_syncLock)
+            lock (this.syncLock)
             {
-                ((ICollection)_minHeap.Items).CopyTo(array, index);
+                ((ICollection)this.minHeap.Items).CopyTo(array, index);
             }
         }
 
         /// <summary>
         /// Gets a value indicating whether access to the ICollection is synchronized with the SyncRoot.
         /// </summary>
-        bool ICollection.IsSynchronized
-        {
-            get { return true; }
-        }
+        bool ICollection.IsSynchronized => true;
 
         /// <summary>
         /// Gets an object that can be used to synchronize access to the collection.
         /// </summary>
-        object ICollection.SyncRoot
-        {
-            get { return _syncLock; }
-        }
+        object ICollection.SyncRoot => this.syncLock;
 
         /// <summary>Implements a binary heap that prioritizes smaller values.</summary>
         private sealed class MinBinaryHeap
         {
-            private readonly List<KeyValuePair<TKey, TValue>> _items;
+            private readonly List<KeyValuePair<TKey, TValue>> items;
 
             /// <summary>Initializes an empty heap.</summary>
             public MinBinaryHeap()
             {
-                _items = new List<KeyValuePair<TKey, TValue>>();
+                this.items = new List<KeyValuePair<TKey, TValue>>();
             }
 
             /// <summary>Initializes a heap as a copy of another heap instance.</summary>
@@ -250,28 +240,28 @@ namespace Ncp
             /// <remarks>Key/Value values are not deep cloned.</remarks>
             public MinBinaryHeap(MinBinaryHeap heapToCopy)
             {
-                _items = new List<KeyValuePair<TKey, TValue>>(heapToCopy.Items);
+                this.items = new List<KeyValuePair<TKey, TValue>>(heapToCopy.Items);
             }
 
             /// <summary>Empties the heap.</summary>
             public void Clear()
             {
-                _items.Clear();
+                this.items.Clear();
             }
 
             /// <summary>Adds an item to the heap.</summary>
             public void Insert(TKey key, TValue value)
             {
                 // Create the entry based on the provided key and value
-                Insert(new KeyValuePair<TKey, TValue>(key, value));
+                this.Insert(new KeyValuePair<TKey, TValue>(key, value));
             }
 
             /// <summary>Adds an item to the heap.</summary>
             public void Insert(KeyValuePair<TKey, TValue> entry)
             {
                 // Add the item to the list, making sure to keep track of where it was added.
-                _items.Add(entry);
-                int pos = _items.Count - 1;
+                this.items.Add(entry);
+                var pos = this.items.Count - 1;
 
                 // If the new item is the only item, we're done.
                 if (pos == 0) return;
@@ -284,45 +274,45 @@ namespace Ncp
                     int nextPos = (pos - 1) / 2;
 
                     // Extract the entry at the next position
-                    var toCheck = _items[nextPos];
+                    var toCheck = this.items[nextPos];
 
                     // Compare that entry to our new one.  If our entry has a smaller key, move it up.
                     // Otherwise, we're done.
                     if (entry.Key.CompareTo(toCheck.Key) < 0)
                     {
-                        _items[pos] = toCheck;
+                        this.items[pos] = toCheck;
                         pos = nextPos;
                     }
                     else break;
                 }
 
                 // Make sure we put this entry back in, just in case
-                _items[pos] = entry;
+                this.items[pos] = entry;
             }
 
             /// <summary>Returns the entry at the top of the heap.</summary>
             public KeyValuePair<TKey, TValue> Peek()
             {
                 // Returns the first item
-                if (_items.Count == 0) throw new InvalidOperationException("The heap is empty.");
-                return _items[0];
+                if (this.items.Count == 0) throw new InvalidOperationException("The heap is empty.");
+                return this.items[0];
             }
 
             /// <summary>Removes the entry at the top of the heap.</summary>
             public KeyValuePair<TKey, TValue> Remove()
             {
                 // Get the first item and save it for later (this is what will be returned).
-                if (_items.Count == 0) throw new InvalidOperationException("The heap is empty.");
-                var toReturn = _items[0];
+                if (this.items.Count == 0) throw new InvalidOperationException("The heap is empty.");
+                var toReturn = this.items[0];
 
                 // Remove the first item if there will only be 0 or 1 items left after doing so.
-                if (_items.Count <= 2) _items.RemoveAt(0);
+                if (this.items.Count <= 2) this.items.RemoveAt(0);
                 // A reheapify will be required for the removal
                 else
                 {
                     // Remove the first item and move the last item to the front.
-                    _items[0] = _items[_items.Count - 1];
-                    _items.RemoveAt(_items.Count - 1);
+                    this.items[0] = this.items[this.items.Count - 1];
+                    this.items.RemoveAt(this.items.Count - 1);
 
                     // Start reheapify
                     int current = 0, possibleSwap = 0;
@@ -331,15 +321,15 @@ namespace Ncp
                     while (true)
                     {
                         // Get the positions of the node's children
-                        int leftChildPos = 2 * current + 1;
-                        int rightChildPos = leftChildPos + 1;
+                        var leftChildPos = 2 * current + 1;
+                        var rightChildPos = leftChildPos + 1;
 
                         // Should we swap with the left child?
-                        if (leftChildPos < _items.Count)
+                        if (leftChildPos < this.items.Count)
                         {
                             // Get the two entries to compare (node and its left child)
-                            var entry1 = _items[current];
-                            var entry2 = _items[leftChildPos];
+                            var entry1 = this.items[current];
+                            var entry2 = this.items[leftChildPos];
 
                             // If the child has a lower key than the parent, set that as a possible swap
                             if (entry2.Key.CompareTo(entry1.Key) < 0) possibleSwap = leftChildPos;
@@ -348,11 +338,11 @@ namespace Ncp
 
                         // Should we swap with the right child?  Note that now we check with the possible swap
                         // position (which might be current and might be left child).
-                        if (rightChildPos < _items.Count)
+                        if (rightChildPos < this.items.Count)
                         {
                             // Get the two entries to compare (node and its left child)
-                            var entry1 = _items[possibleSwap];
-                            var entry2 = _items[rightChildPos];
+                            var entry1 = this.items[possibleSwap];
+                            var entry2 = this.items[rightChildPos];
 
                             // If the child has a lower key than the parent, set that as a possible swap
                             if (entry2.Key.CompareTo(entry1.Key) < 0) possibleSwap = rightChildPos;
@@ -361,9 +351,9 @@ namespace Ncp
                         // Now swap current and possible swap if necessary
                         if (current != possibleSwap)
                         {
-                            var temp = _items[current];
-                            _items[current] = _items[possibleSwap];
-                            _items[possibleSwap] = temp;
+                            var temp = this.items[current];
+                            this.items[current] = this.items[possibleSwap];
+                            this.items[possibleSwap] = temp;
                         }
                         else break; // if nothing to swap, we're done
 
@@ -377,15 +367,9 @@ namespace Ncp
             }
 
             /// <summary>Gets the number of objects stored in the heap.</summary>
-            public int Count
-            {
-                get { return _items.Count; }
-            }
+            public int Count => this.items.Count;
 
-            internal List<KeyValuePair<TKey, TValue>> Items
-            {
-                get { return _items; }
-            }
+            internal List<KeyValuePair<TKey, TValue>> Items => this.items;
         }
     }
 }

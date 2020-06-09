@@ -5,9 +5,11 @@ using Chaos.NaCl;
 using HashLib;
 using NSec.Cryptography;
 
+using NknSdk.Common.Extensions;
+
 namespace NknSdk.Common
 {
-    public class Crypto
+    public class Hash
     {
         public const int KeyLength = 32;
         public const int NonceLength = 24;
@@ -17,30 +19,15 @@ namespace NknSdk.Common
 
         public static SignatureAlgorithm Algorithm { get; } = SignatureAlgorithm.Ed25519;
 
-        public static CryptoKeyPair MakeKeyPair(byte[] privateKeySeed)
-        {
-            var publicKey = new byte[Chaos.NaCl.Ed25519.PublicKeySizeInBytes];
-            var privateKey = new byte[Chaos.NaCl.Ed25519.ExpandedPrivateKeySizeInBytes];
-
-            Chaos.NaCl.Ed25519.KeyPairFromSeed(out publicKey, out privateKey, privateKeySeed);
-            var key = Key.Import(Algorithm, privateKeySeed, KeyBlobFormat.RawPrivateKey);
-
-            return new CryptoKeyPair
-            {
-                PrivateKey = privateKey,
-                PublicKey = publicKey.ToHexString(),
-                RealKey = key
-            };
-        }
-
         public static byte[] EncryptSymmetric(byte[] message, byte[] nonce, byte[] sharedKey)
-            => XSalsa20Poly1305.Encrypt(message, sharedKey, nonce);
+        {
+            return XSalsa20Poly1305.Encrypt(message, sharedKey, nonce);
+        }
         
         public static byte[] DecryptSymmetric(byte[] message, byte[] nonce, byte[] sharedKey)
         {
-            var decrpted = Sodium.SecretBox.Open(message, nonce, sharedKey);
+            return Sodium.SecretBox.Open(message, nonce, sharedKey);
           //  var test2 = XSalsa20Poly1305.TryDecrypt(message, sharedKey, nonce);
-            return decrpted;
         }
 
         public static string Sha256(byte[] input)
@@ -49,22 +36,22 @@ namespace NknSdk.Common
             {
                 var hash = sha256.ComputeHash(input);
 
-                var hashString = hash.ToHexString();
-
-                return hashString;
+                return hash.ToHexString();
             }
         }
 
         public static string Sha256(string input)
         {
             var inputBytes = Encoding.Default.GetBytes(input);
-            return Sha256(inputBytes);
+
+            return Hash.Sha256(inputBytes);
         }
 
-        public static string Sha256Hex(string input)
+        public static string Sha256Hex(string hexString)
         {
-            var inputBytes = input.FromHexString();
-            return Sha256(inputBytes);
+            var inputBytes = hexString.FromHexString();
+
+            return Hash.Sha256(inputBytes);
         }
 
         public static string DoubleSha256(byte[] input)
@@ -72,6 +59,7 @@ namespace NknSdk.Common
             using (var sha256 = SHA256Managed.Create())
             {
                 var hash = sha256.ComputeHash(input);
+
                 var doubleHash = sha256.ComputeHash(hash);
 
                 return doubleHash.ToHexString();
@@ -81,20 +69,22 @@ namespace NknSdk.Common
         public static string DoubleSha256(string input)
         {
             var inputBytes = Encoding.Default.GetBytes(input);
-            return DoubleSha256(inputBytes);
+
+            return Hash.DoubleSha256(inputBytes);
         }
 
         public static string Ripemd160(string text)
         {
             var hash = HashFactory.Crypto.CreateRIPEMD160();
-            var test = hash.ComputeString(text);
 
-            return test.GetBytes().ToHexString();
+            var result = hash.ComputeString(text);
+
+            return result.GetBytes().ToHexString();
         }
 
-        public static byte[] Ripemd160Hex(string hexString)
+        public static byte[] Ripemd160Hex(string hex)
         {
-            var bytes = hexString.FromHexString();
+            var bytes = hex.FromHexString();
 
             var hash = HashFactory.Crypto.CreateRIPEMD160();
 
