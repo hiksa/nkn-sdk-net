@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -8,6 +9,7 @@ using System.Threading.Tasks;
 using Ncp;
 
 using NknSdk.Client;
+using NknSdk.Common.Extensions;
 using NknSdk.Wallet;
 
 namespace Playground
@@ -27,6 +29,11 @@ namespace Playground
 
             var wallet = new Wallet(new WalletOptions { SeedHex = seed1, Version = 1 });
             var walletJson = wallet.ToJson();
+
+            var topic = "tuna_v1.httpproxy";
+            var test1 = Wallet.GetBalance("NKNFdAZ8HsfpX95R9fNgGDvfypKdGpw5kgVq", new WalletOptions())
+                .GetAwaiter()
+                .GetResult();
 
             var test = Wallet.FromJson(walletJson, new WalletOptions());
 

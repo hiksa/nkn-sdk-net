@@ -10,17 +10,20 @@ namespace NknSdk.Client.Network
         private readonly DateTime? deadline;
 
         private readonly Channel<T> responseChannel;
+        private readonly Channel<T> timeoutChannel;
 
         public ClientResponseProcessor(
             byte[] messageId,
             int? timeout,
-            Channel<T> responseChannel)
-            : this(messageId.ToHexString(), timeout, responseChannel) { }
+            Channel<T> responseChannel,
+            Channel<T> timeoutChannel)
+            : this(messageId.ToHexString(), timeout, responseChannel, timeoutChannel) { }
 
         public ClientResponseProcessor(
             string messageId, 
             int? timeout,
-            Channel<T> responseChannel)
+            Channel<T> responseChannel,
+            Channel<T> timeoutChannel)
         {
             this.MessageId = messageId;
 
@@ -30,6 +33,7 @@ namespace NknSdk.Client.Network
             }
 
             this.responseChannel = responseChannel;
+            this.timeoutChannel = timeoutChannel;
         }
 
         public string MessageId { get; }
@@ -52,11 +56,13 @@ namespace NknSdk.Client.Network
         public void HandleResponse(object data)
         {
             this.responseChannel.Writer.WriteAsync((T)data);
+            this.responseChannel.Writer.Complete();
         }
 
         public void HandleTimeout()
         {
-            //this.timeoutHandler?.Invoke("Message timeout");
+            this.timeoutChannel.Writer.WriteAsync(default);
+            this.timeoutChannel.Writer.Complete();
         }
     }
 }

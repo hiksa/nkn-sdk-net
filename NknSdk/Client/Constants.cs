@@ -8,11 +8,13 @@ namespace NknSdk.Client
 
         public const int MessageIdLength = 8;
 
+        public const int SessionIdLength = 8;
+
         public const int MaxClientMessageSize = 4_000_000;
 
         public const int AcceptSessionBufferSize = 128;
 
-        public const int SessionIdSize = 8;
+        public const int CheckTimeoutInterval = 250;
 
         public static Regex DefaultSessionAllowedAddressRegex = new Regex("/.*/");
 

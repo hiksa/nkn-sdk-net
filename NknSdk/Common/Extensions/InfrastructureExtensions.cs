@@ -45,7 +45,7 @@ namespace NknSdk.Common.Extensions
         }
 
         public static T[] Concat<T>(this T[] first, T[] second)
-            => first.Concat(second).ToArray();
+            => Enumerable.Concat(first, second).ToArray();
 
         public static void ThrowIfNullOrEmpty(this string instance, string message = null)
         {

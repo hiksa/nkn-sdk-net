@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-
+using System.Threading;
 using NknSdk.Common.Extensions;
 using NknSdk.Common.Protobuf.Payloads;
 
@@ -10,11 +10,13 @@ namespace NknSdk.Client.Network
     public class ClientResponseManager<T>
     {
         private readonly IDictionary<string, ClientResponseProcessor<T>> responseProcessors;
-        // TODO: add timer
+        private Timer timer;
 
         public ClientResponseManager()
         {
             this.responseProcessors = new ConcurrentDictionary<string, ClientResponseProcessor<T>>();
+
+            this.CheckTimeout();
         }
 
         public void Add(ClientResponseProcessor<T> processor)
@@ -34,7 +36,7 @@ namespace NknSdk.Client.Network
 
         public void Stop()
         {
-            // TODO: clear timer
+            this.timer.Dispose();
             this.Clear();
         }
 
@@ -74,7 +76,7 @@ namespace NknSdk.Client.Network
                 this.responseProcessors.Remove(expiredProcessor.MessageId);
             }
 
-            // TODO: Set timer
+            this.timer = new Timer(state => this.CheckTimeout(), new { }, Constants.CheckTimeoutInterval, Timeout.Infinite);
         }
     }
 }

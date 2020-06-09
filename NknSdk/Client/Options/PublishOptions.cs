@@ -2,6 +2,11 @@
 {
     public class PublishOptions
     {
+        public PublishOptions()
+        {
+
+        }
+
         public bool? IsEncrypted { get; set; }
 
         public int? MessageHoldingSeconds { get; set; }

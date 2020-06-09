@@ -18,6 +18,7 @@ using NknSdk.Common.Rpc.Results;
 using NknSdk.Common.Protobuf;
 using NknSdk.Common.Protobuf.Messages;
 using NknSdk.Wallet;
+using NknSdk.Wallet.Models;
 
 namespace NknSdk.Client
 {
@@ -37,8 +38,8 @@ namespace NknSdk.Client
         private ClientResponseManager<string> textResponseManager;
         private ClientResponseManager<byte[]> binaryResponseManager;
 
-        public IList<Action<ConnectHandlerRequest>> connectListeners = new List<Action<ConnectHandlerRequest>>();
-        public IList<Func<MessageHandlerRequest, Task<object>>> messageListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
+        public IList<Action<ConnectHandlerRequest>> connectHandlers = new List<Action<ConnectHandlerRequest>>();
+        public IList<Func<MessageHandlerRequest, Task<object>>> messageHandlers = new List<Func<MessageHandlerRequest, Task<object>>>();
 
         public Client(ClientOptions options)
         {
@@ -61,7 +62,7 @@ namespace NknSdk.Client
             var walletOptions = new WalletOptions { Version = 1, SeedHex = key.Seed };
             this.wallet = new Wallet.Wallet(walletOptions);
 
-            this.messageListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
+            this.messageHandlers = new List<Func<MessageHandlerRequest, Task<object>>>();
             this.textResponseManager = new ClientResponseManager<string>();
             this.binaryResponseManager= new ClientResponseManager<byte[]>();
 
@@ -76,16 +77,61 @@ namespace NknSdk.Client
 
         public CryptoKey Key => this.key;
 
-        public GetWsAddressResult RemoteNode => this.remoteNode;
-
+        /// <summary>
+        /// Gets the client's secret seed as hex string value 
+        /// </summary>
         public string Seed => this.key.Seed;
 
+        /// <summary>
+        /// Gets the client's public key as hex string value 
+        /// </summary>
         public string PublicKey => this.key.PublicKey;
 
-        public void OnMessage(Func<MessageHandlerRequest, Task<object>> func) => this.messageListeners.Add(func);
+        public GetWsAddressResult RemoteNode => this.remoteNode;
 
-        public void OnConnect(Action<ConnectHandlerRequest> func) => this.connectListeners.Add(func);
-        
+        private bool IsUsingTls => this.options.UseTls.HasValue && this.options.UseTls == true;
+
+        /// <summary>
+        /// Adds a callback method that will be executed when the client accepts a new message. 
+        /// Multiple callbacks will be called sequentially in order of added. Can be async method in which case
+        /// call will wait for previous task to comple before calling the next. 
+        /// If the first non-null returned value is byte[] or string the value will be sent back as reply; 
+        /// if the first non-null returned value is false, no reply or ACK will be sent;
+        /// if all handler callbacks return null or are void, an ACK indicating message was received will be sent back. 
+        /// Receiving reply or ACK will not trigger this callback.
+        /// </summary>
+        /// <param name="func">The callback method</param>
+        public void OnMessage(Func<MessageHandlerRequest, Task<object>> func) => this.messageHandlers.Add(func);
+
+        /// <summary>
+        /// Adds a callback method that will be executed when the client connects to a node.
+        /// Multiple listeners will be called sequentially in the order of being added.
+        /// Note that callbacks added after the client is connected to a node for a first time
+        /// (i.e. 'client.isReady = true') will not be called.
+        /// </summary>
+        /// <param name="func">The callback method</param>
+        public void OnConnect(Action<ConnectHandlerRequest> func) => this.connectHandlers.Add(func);
+
+        public void Close()
+        {
+            this.binaryResponseManager.Stop();
+            this.textResponseManager.Stop();
+            this.shouldReconnect = false;
+
+            try
+            {
+                if (this.ws != null)
+                {
+                    this.ws.Close();
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            this.isClosed = true;
+        }
+
         /// <summary>
         /// Send text message to a destination address
         /// </summary>
@@ -93,7 +139,7 @@ namespace NknSdk.Client
         /// <param name="destination">Destination address to send text to</param>
         /// <param name="text">The text to send</param>
         /// <param name="options">Options</param>
-        /// <returns>Response object containing result of type T</returns>
+        /// <returns>Response object containing result of type T, or error message</returns>
         public async Task<SendMessageResponse<T>> SendAsync<T>(
             string destination,
             string text,
@@ -133,7 +179,7 @@ namespace NknSdk.Client
         /// <param name="destination">Destination address to send data to</param>
         /// <param name="data">The data to send</param>
         /// <param name="options">Options</param>
-        /// <returns>Response object containing result of type T</returns>
+        /// <returns>Response object containing result of type T, or error message</returns>
         public async Task<SendMessageResponse<T>> SendAsync<T>(
             string destination,
             byte[] data,
@@ -165,18 +211,293 @@ namespace NknSdk.Client
             }
         }
 
+        public async Task<byte[]> SendToManyAsync(
+            IList<string> destinations,
+            byte[] data,
+            SendOptions options = null)
+        {
+            options ??= new SendOptions();
+
+            try
+            {
+                return await this.SendDataAsync<byte[]>(destinations, data, options);
+            }
+            catch (Exception)
+            {
+                throw new InvalidOperationException("Failed to send message");
+            }            
+        }
+
+
+        public async Task<byte[]> SendToManyAsync(
+            IList<string> destinations,
+            string text,
+            SendOptions options = null)
+        {
+            options ??= new SendOptions();
+
+            try
+            {
+                return await this.SendTextAsync<byte[]>(destinations, text, options);
+            }
+            catch (Exception)
+            {
+                throw new InvalidOperationException("Failed to send message");
+            }
+        }
+
+        public async Task<GetLatestBlockHashResult> GetLatestBlock()
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer))
+            {
+                try
+                {
+                    return await Wallet.Wallet.GetLatestBlock(this.wallet.Options);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return await Wallet.Wallet.GetLatestBlock(this.wallet.Options);
+        }
+
+        public async Task<GetRegistrantResult> GetRegistrant(string name)
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer))
+            {
+                try
+                {
+                    return await Wallet.Wallet.GetRegistrantAsync(name, this.wallet.Options);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return await Wallet.Wallet.GetRegistrantAsync(name, this.wallet.Options);
+        }
+
+        public async Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadata(
+            string topic,
+            WalletOptions options = null,
+            int offset = 0,
+            int limit = 1000,
+            bool txPool = false)
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer))
+            {
+                try
+                {
+                    return await Wallet.Wallet.GetSubscribersWithMetadata(topic, options, offset, limit, txPool);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return await Wallet.Wallet.GetSubscribersWithMetadata(topic, this.wallet.Options);
+        }
+
+        public async Task<GetSubscribersResult> GetSubscribers(
+            string topic, 
+            WalletOptions options = null,
+            int offset = 0,
+            int limit = 1000,
+            bool txPool = false)
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer))
+            {
+                try
+                {
+                    return await Wallet.Wallet.GetSubscribers(topic, options, offset, limit, txPool);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return await Wallet.Wallet.GetSubscribers(topic, this.wallet.Options);
+        }
+
+        public async Task<long> GetSubscrinersCount(string topic)
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer) == false)
+            {
+                try
+                {
+                    return await Wallet.Wallet.GetSubscribersCount(topic, this.wallet.Options);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return await Wallet.Wallet.GetSubscribersCount(topic, this.wallet.Options);
+        }
+
+        public async Task<GetSubscriptionResult> GetSubscription(string topic, string subscriber)
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer) == false)
+            {
+                try
+                {
+                    return await Wallet.Wallet.GetSubscription(topic, subscriber, this.wallet.Options);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return await Wallet.Wallet.GetSubscription(topic, subscriber, this.wallet.Options);
+        }
+
+        public async Task<GetBalanceResult> GetBalance(string address, WalletOptions options = null)
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer))
+            {
+                try
+                {
+                    return await Wallet.Wallet.GetBalance(address, options);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return await Wallet.Wallet.GetBalance(address, this.wallet.Options);
+        }
+
+        public async Task<GetNonceByAddrResult> GetNonce(string address = null, WalletOptions options = null)
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer))
+            {
+                try
+                {
+                    return await Wallet.Wallet.GetNonce(address == null ? this.Address : address, options);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return await Wallet.Wallet.GetNonce(address == null ? this.Address : address, this.wallet.Options);
+        }
+
+        public Task<string> SendTransaction(NknSdk.Common.Protobuf.Transaction.Transaction tx)
+        {
+            if (string.IsNullOrWhiteSpace(this.wallet.Options.RpcServer))
+            {
+                try
+                {
+                    return Wallet.Wallet.SendTransaction(tx);
+                }
+                catch (Exception)
+                {
+                }
+            }
+
+            // TODO: merge options
+            return Wallet.Wallet.SendTransaction(tx);
+        }
+
+        public Task<string> TransferTo(string toAddress, decimal amount, WalletOptions options = null)
+        {
+            return RpcClient.TransferTo(toAddress, new Amount(amount), this.wallet, this.wallet.Options);
+        }
+
+        public Task<string> RegisterName(string name, WalletOptions options = null)
+        {
+            return RpcClient.RegisterName(name, this.wallet, this.wallet.Options);
+        }
+
+        public Task<string> TransferName(string name, string recipient, WalletOptions options = null)
+        {
+            return RpcClient.TransferName(name, recipient, this.wallet, this.wallet.Options);
+        }
+
+        public Task<string> DeleteName(string name, WalletOptions options = null)
+        {
+            return RpcClient.DeleteName(name, this.wallet, this.wallet.Options);
+        }
+
+        public Task<string> Subscribe(string topic, int duration, string identifier, string meta, WalletOptions options = null)
+        {
+            return RpcClient.Subscribe(topic, duration, identifier, meta, this.wallet, this.wallet.Options);
+        }
+        
+        public Task<string> Unsubscribe(string topic, string identifier, WalletOptions options = null)
+        {
+            return RpcClient.Unsubscribe(topic, identifier, this.wallet, this.wallet.Options);
+        }
+
+        public NknSdk.Common.Protobuf.Transaction.Transaction CreateTransaction(NknSdk.Common.Protobuf.Transaction.Payload payload, ulong nonce)
+        {
+            return this.wallet.CreateTransaction(payload, nonce, this.wallet.Options);
+        }
+
+        public async Task PublishAsync(string topic, byte[] data, PublishOptions options = null)
+        {
+            options ??= new PublishOptions();
+
+            var offset = options.Offset;
+
+            var res = await this.GetSubscribers(
+                topic, 
+                this.wallet.Options, 
+                offset.Value, 
+                options.Limit.Value, 
+                options.TxPool.Value);
+
+            var subscribers = res.Subscribers;
+            var subscribersInTxPool = res.SubscribersInTxPool;
+
+            while (res.Subscribers != null && res.Subscribers.Count() >= options.Limit)
+            {
+                offset += options.Limit;
+
+                res = await this.GetSubscribers(
+                    topic,
+                    this.wallet.Options,
+                    offset.Value,
+                    options.Limit.Value,
+                    false);
+
+                if (res.Subscribers != null)
+                {
+                    subscribers = subscribers.Concat(res.Subscribers);
+                }
+            }
+
+            if (options.TxPool == true && subscribersInTxPool != null)
+            {
+                subscribers = subscribers.Concat(subscribersInTxPool);
+            }
+
+            await this.SendToManyAsync(subscribers.ToList(), data);
+        }
+
         internal async Task<byte[]> SendDataAsync<T>(
             IList<string> destinations, 
             byte[] data, 
             SendOptions options,
-            Channel<T> responseChannel = null)
+            Channel<T> responseChannel = null,
+            Channel<T> timeoutChannel = null)
         {
             var payload = MessageFactory.MakeBinaryPayload(data, options.ReplyToId, options.MessageId);
 
             var messageId = await this.SendPayloadAsync(destinations, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseChannel != null)
             {
-                var responseProcessor = new ClientResponseProcessor<T>(messageId, options.ResponseTimeout, responseChannel);
+                var responseProcessor = new ClientResponseProcessor<T>(messageId, options.ResponseTimeout, responseChannel, timeoutChannel);
                 this.AddResponseProcessor(responseProcessor);
             }
 
@@ -187,14 +508,15 @@ namespace NknSdk.Client
             string destination, 
             byte[] data, 
             SendOptions options,
-            Channel<T> responseChannel = null)
+            Channel<T> responseChannel = null,
+            Channel<T> timeoutChannel = null)
         {
             var payload = MessageFactory.MakeBinaryPayload(data, options.ReplyToId, options.MessageId);
 
             var messageId = await this.SendPayloadAsync(destination, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseChannel != null)
             {
-                var responseProcessor = new ClientResponseProcessor<T>(messageId, options.ResponseTimeout, responseChannel);
+                var responseProcessor = new ClientResponseProcessor<T>(messageId, options.ResponseTimeout, responseChannel, timeoutChannel);
                 this.AddResponseProcessor(responseProcessor);
             }
 
@@ -205,14 +527,15 @@ namespace NknSdk.Client
             string destination, 
             string text, 
             SendOptions options,
-            Channel<T> responseChannel = null)
+            Channel<T> responseChannel = null,
+            Channel<T> timeoutChannel = null)
         {
             var payload = MessageFactory.MakeTextPayload(text, options.ReplyToId, options.MessageId);
 
             var messageId = await this.SendPayloadAsync(destination, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseChannel != null)
             {
-                var responseProcessor = new ClientResponseProcessor<T>(messageId, options.ResponseTimeout, responseChannel);
+                var responseProcessor = new ClientResponseProcessor<T>(messageId, options.ResponseTimeout, responseChannel, timeoutChannel);
                 this.AddResponseProcessor(responseProcessor);
             }
 
@@ -223,14 +546,15 @@ namespace NknSdk.Client
             IList<string> destinations,
             string text,
             SendOptions options,
-            Channel<T> responseChannel = null)
+            Channel<T> responseChannel = null,
+            Channel<T> timeoutChannel = null)
         {
             var payload = MessageFactory.MakeTextPayload(text, options.ReplyToId, options.MessageId);
 
             var messageId = await this.SendPayloadAsync(destinations, payload, options.IsEncrypted.Value);
             if (messageId != null && options.NoReply != false && responseChannel != null)
             {
-                var responseProcessor = new ClientResponseProcessor<T>(messageId, options.ResponseTimeout, responseChannel);
+                var responseProcessor = new ClientResponseProcessor<T>(messageId, options.ResponseTimeout, responseChannel, timeoutChannel);
                 this.AddResponseProcessor(responseProcessor);
             }
 
@@ -340,33 +664,13 @@ namespace NknSdk.Client
             return payload.MessageId;
         }
 
-        public void Close()
-        {
-            this.binaryResponseManager.Stop();
-            this.textResponseManager.Stop();
-            this.shouldReconnect = false;
-
-            try
-            {
-                if (this.ws != null)
-                {
-                    this.ws.Close();
-                }
-            }
-            catch (Exception)
-            {
-            }
-
-            this.isClosed = true;
-        }
-
         internal IList<MessagePayload> MakeMessagesFromPayload(Payload payload, bool isEcrypted, IList<string> destinations)
         {
             var serializedPayload = payload.ToBytes();
 
             if (isEcrypted)
             {
-                return this.EncryptPayload(serializedPayload, destinations);
+                return this.EncryptPayloadMany(serializedPayload, destinations);
             }
 
             return new List<MessagePayload> { MessageFactory.MakeMessage(serializedPayload, false) };
@@ -382,6 +686,36 @@ namespace NknSdk.Client
             }
 
             return MessageFactory.MakeMessage(serializedPayload, false);
+        }
+
+        internal void SendAck(IEnumerable<string> destinations, byte[] messageId, bool isEncrypted)
+        {
+            if (destinations.Count() == 1)
+            {
+                this.SendAck(destinations.First(), messageId, isEncrypted);
+            }
+            else if (destinations.Count() > 1 && isEncrypted)
+            {
+                foreach (var destination in destinations)
+                {
+                    this.SendAck(destination, messageId, isEncrypted);
+                }
+            }
+        }
+
+        internal void SendAck(string destination, byte[] messageId, bool isEncrypted)
+        {
+            var payload = MessageFactory.MakeAckPayload(messageId.ToHexString(), null);
+            var messagePayload = this.MakeMessageFromPayload(payload, isEncrypted, destination);
+            var message = MessageFactory.MakeOutboundMessage(
+                this,
+                new string[] { destination },
+                new List<byte[]> { ProtoSerializer.Serialize(messagePayload) },
+                0);
+
+            var messageBytes = message.ToBytes();
+
+            this.SendThroughSocket(messageBytes);
         }
 
         internal async Task<IList<string>> ProcessDestinationsAsync(IList<string> destinations)
@@ -427,39 +761,128 @@ namespace NknSdk.Client
             return string.Join(".", destinationParts);
         }
 
-        internal void SendAck(IEnumerable<string> destinations, byte[] messageId, bool isEncrypted)
+        private void SendThroughSocket(byte[] data)
         {
-            if (destinations.Count() == 1)
+            if (this.ws == null)
             {
-                this.SendAck(destinations.First(), messageId, isEncrypted);
+                throw new ClientNotReadyException();
             }
-            else if (destinations.Count() > 1 && isEncrypted)
+
+            this.ws.Send(data);
+        }
+
+        private void AddResponseProcessor<T>(ClientResponseProcessor<T> responseProcessor)
+        {
+            var typeofResponse = typeof(T);
+            if (typeofResponse == typeof(string))
             {
-                foreach (var destination in destinations)
-                {
-                    this.SendAck(destination, messageId, isEncrypted);
-                }
+                this.textResponseManager.Add(responseProcessor as ClientResponseProcessor<string>);
+            }
+            else if (typeofResponse == typeof(byte[]))
+            {
+                this.binaryResponseManager.Add(responseProcessor as ClientResponseProcessor<byte[]>);
+            }
+
+            throw new InvalidArgumentException(nameof(responseProcessor));
+        }
+
+        private void OnWebSocketClosed(object sender, EventArgs e)
+        {
+            Console.WriteLine("Socket closed.");
+            if (this.shouldReconnect)
+            {
+                this.ReconnectAsync().GetAwaiter().GetResult();
             }
         }
 
-        internal void SendAck(string destination, byte[] messageId, bool isEncrypted)
+        private byte[] GetPayload(MessagePayload message, string source)
+            => message.IsEncrypted
+                ? this.DecryptPayload(message, source)
+                : message.Payload;
+
+        private byte[] DecryptPayload(MessagePayload message, string sourceAddress)
         {
-            var payload = MessageFactory.MakeAckPayload(messageId.ToHexString(), null);
-            var messagePayload = this.MakeMessageFromPayload(payload, isEncrypted, destination);
-            var message = MessageFactory.MakeOutboundMessage(
-                this, 
-                new string[] { destination }, 
-                new List<byte[]> { ProtoSerializer.Serialize(messagePayload) }, 
-                0);
+            var rawPayload = message.Payload;
+            var sourcePublicKey = Common.Address.AddressToPublicKey(sourceAddress);
+            var nonce = message.Nonce;
+            var encryptedKey = message.EncryptedKey;
 
-            var messageBytes = message.ToBytes();
+            byte[] decryptedPayload = null;
+            if (encryptedKey != null && encryptedKey.Length > 0)
+            {
+                if (nonce.Length != Hash.NonceLength * 2)
+                {
+                    throw new DecryptionException("invalid nonce length");
+                }
 
-            this.SendThroughSocket(messageBytes);
+                var sharedKey = this.key.Decrypt(
+                    encryptedKey,
+                    nonce.Take(Hash.NonceLength).ToArray(),
+                    sourcePublicKey);
+
+                if (sharedKey == null)
+                {
+                    throw new DecryptionException("decrypt shared key failed");
+                }
+
+                decryptedPayload = Hash.DecryptSymmetric(rawPayload, nonce.Skip(Hash.NonceLength).ToArray(), sharedKey);
+                if (decryptedPayload == null)
+                {
+                    throw new DecryptionException("decrypt message failed");
+                }
+            }
+            else
+            {
+                if (nonce.Length != Hash.NonceLength)
+                {
+                    throw new DecryptionException("invalid nonce length");
+                }
+
+                decryptedPayload = this.key.Decrypt(rawPayload, nonce, sourcePublicKey);
+                if (decryptedPayload == null)
+                {
+                    throw new DecryptionException("decrypt message failed");
+                }
+            }
+
+            return decryptedPayload;
+        }
+
+        private MessagePayload EncryptPayload(byte[] payload, string destination)
+        {
+            var publicKey = Common.Address.AddressToPublicKey(destination);
+            var encryptedKey = this.key.Encrypt(payload, publicKey);
+
+            var message = MessageFactory.MakeMessage(encryptedKey.Message, true, encryptedKey.Nonce);
+
+            return message;
+        }
+
+        private IList<MessagePayload> EncryptPayloadMany(byte[] payload, IList<string> destinations)
+        {
+            var nonce = PseudoRandom.RandomBytes(Hash.NonceLength);
+            var key = PseudoRandom.RandomBytes(Hash.KeyLength);
+            var encryptedPayload = Hash.EncryptSymmetric(payload, nonce, key);
+
+            var result = new List<MessagePayload>();
+            for (int i = 0; i < destinations.Count; i++)
+            {
+                var publicKey = Common.Address.AddressToPublicKey(destinations[i]);
+                var encryptedKey = this.Key.Encrypt(key, publicKey);
+
+                var mergedNonce = encryptedKey.Nonce.Concat(nonce).ToArray();
+
+                var message = MessageFactory.MakeMessage(encryptedPayload, true, mergedNonce, encryptedKey.Message);
+
+                result.Add(message);
+            }
+
+            return result;
         }
 
         private async Task ConnectAsync()
         {
-            var useTls = this.ShouldUseTls();
+            var useTls = this.IsUsingTls;
             for (int i = 0; i < 3; i++)
             {
                 GetWsAddressResult getWsAddressResult;
@@ -488,63 +911,6 @@ namespace NknSdk.Client
             {
                 await this.ReconnectAsync();
             }
-        }
-
-        private void SendThroughSocket(byte[] data)
-        {
-            if (this.ws == null)
-            {
-                throw new ClientNotReadyException();
-            }
-
-            this.ws.Send(data);
-        }
-
-        private void AddResponseProcessor<T>(ClientResponseProcessor<T> responseProcessor)
-        {
-            var typeofResponse = typeof(T);
-            if (typeofResponse == typeof(string))
-            {
-                this.textResponseManager.Add(responseProcessor as ClientResponseProcessor<string>);
-            }
-            else if (typeofResponse == typeof(byte[]))
-            {
-                this.binaryResponseManager.Add(responseProcessor as ClientResponseProcessor<byte[]>);
-            }
-
-            throw new InvalidArgumentException(nameof(responseProcessor));
-        }
-
-        private IList<MessagePayload> EncryptPayload(byte[] payload, IList<string> destinations)
-        {
-            var nonce = PseudoRandom.RandomBytes(Hash.NonceLength);
-            var key = PseudoRandom.RandomBytes(Hash.KeyLength);
-            var encryptedPayload = Hash.EncryptSymmetric(payload, nonce, key);
-
-            var result = new List<MessagePayload>();
-            for (int i = 0; i < destinations.Count; i++)
-            {
-                var publicKey = Common.Address.AddressToPublicKey(destinations[i]);
-                var encryptedKey = this.Key.Encrypt(key, publicKey);
-
-                var mergedNonce = encryptedKey.Nonce.Concat(nonce).ToArray();
-
-                var message = MessageFactory.MakeMessage(encryptedPayload, true, mergedNonce, encryptedKey.Message);
-
-                result.Add(message);
-            }
-
-            return result;
-        }
-
-        private MessagePayload EncryptPayload(byte[] payload, string destination)
-        {
-            var publicKey = Common.Address.AddressToPublicKey(destination);
-            var encryptedKey = this.key.Encrypt(payload, publicKey);
-
-            var message = MessageFactory.MakeMessage(encryptedKey.Message, true, encryptedKey.Nonce);
-
-            return message;
         }
 
         private async Task<bool> HandleInboundMessageAsync(byte[] data)
@@ -616,7 +982,7 @@ namespace NknSdk.Client
                         NoReply = payload.NoReply
                     };
 
-                    var tasks = this.messageListeners.Select(async func =>
+                    var tasks = this.messageHandlers.Select(async func =>
                     {
                         try
                         {
@@ -704,7 +1070,7 @@ namespace NknSdk.Client
             }
 
             var ws = default(WebSocket);
-            var protocol = this.ShouldUseTls() ? "wss://" : "ws://";
+            var protocol = this.IsUsingTls ? "wss://" : "ws://";
             var uri = $"{protocol}{remoteNode.Address}";
 
             try
@@ -782,9 +1148,9 @@ namespace NknSdk.Client
                             this.IsReady = true;
                             Console.WriteLine("***Client connected***");
 
-                            if (this.connectListeners.Count > 0)
+                            if (this.connectHandlers.Count > 0)
                             {
-                                foreach (var listener in this.connectListeners)
+                                foreach (var listener in this.connectHandlers)
                                 {
                                     listener(new ConnectHandlerRequest { Address = setClientMessage.Result.Node.Address });
                                 }
@@ -812,68 +1178,6 @@ namespace NknSdk.Client
             this.ws.Connect();
         }
 
-        private byte[] GetPayload(MessagePayload message, string source)
-            => message.IsEncrypted
-                ? this.DecryptPayload(message, source)
-                : message.Payload;
-
-        private byte[] DecryptPayload(MessagePayload message, string sourceAddress)
-        {
-            var rawPayload = message.Payload;
-            var sourcePublicKey = Common.Address.AddressToPublicKey(sourceAddress);
-            var nonce = message.Nonce;
-            var encryptedKey = message.EncryptedKey;
-
-            byte[] decryptedPayload = null;
-            if (encryptedKey != null && encryptedKey.Length > 0)
-            {
-                if (nonce.Length != Hash.NonceLength * 2)
-                {
-                    throw new DecryptionException("invalid nonce length");
-                }
-
-                var sharedKey = this.key.Decrypt(
-                    encryptedKey, 
-                    nonce.Take(Hash.NonceLength).ToArray(), 
-                    sourcePublicKey);
-
-                if (sharedKey == null)
-                {
-                    throw new DecryptionException("decrypt shared key failed");
-                }
-
-                decryptedPayload = Hash.DecryptSymmetric(rawPayload, nonce.Skip(Hash.NonceLength).ToArray(), sharedKey);
-                if (decryptedPayload == null)
-                {
-                    throw new DecryptionException("decrypt message failed");
-                }
-            }
-            else 
-            {
-                if (nonce.Length != Hash.NonceLength)
-                {
-                    throw new DecryptionException("invalid nonce length");
-                }
-
-                decryptedPayload = this.key.Decrypt(rawPayload, nonce, sourcePublicKey);
-                if (decryptedPayload == null)
-                {
-                    throw new DecryptionException("decrypt message failed");
-                }
-            }
-
-            return decryptedPayload;
-        }
-
-        private void OnWebSocketClosed(object sender, EventArgs e)
-        {
-            Console.WriteLine("Socket closed.");
-            if (this.shouldReconnect)
-            {
-                this.ReconnectAsync().GetAwaiter().GetResult();
-            }
-        }
-
         private async Task ReconnectAsync()
         {
             await Task.Factory.StartNew(async () =>
@@ -888,8 +1192,5 @@ namespace NknSdk.Client
                 this.reconnectInterval = this.options.ReconnectIntervalMax.Value;
             }
         }
-
-        private bool ShouldUseTls()
-            => this.options.UseTls.HasValue && this.options.UseTls == true;
     }
 }

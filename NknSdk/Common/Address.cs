@@ -8,9 +8,9 @@ namespace NknSdk.Common
 {
     public static class Address
     {
-        public const string Prefix = "02b825";
         public const int Uint160Length = 20;
         public const int CheckSumLength = 4;
+        public const string Prefix = "02b825";
 
         public static readonly int PrefixLength = Address.Prefix.Length / 2;
         public static readonly int FullLength = Address.PrefixLength + Address.Uint160Length + Address.CheckSumLength;

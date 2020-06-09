@@ -12,6 +12,7 @@ using NknSdk.Common.Rpc.Results;
 using NknSdk.Common.Exceptions;
 using NknSdk.Common.Extensions;
 using NknSdk.Wallet;
+using NknSdk.Wallet.Models;
 
 namespace NknSdk.Common.Rpc
 {
@@ -36,12 +37,11 @@ namespace NknSdk.Common.Rpc
             return await CallRpc<GetWsAddressResult>(nodeUri, "getwssaddr", new { address });
         }
 
-        public static async Task<GetSubscribersResult> GetSubscribers(
+        public static async Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadata(
             string nodeUri,
             string topic,
             int offset = 0,
             int limit = 1000,
-            bool meta = false,
             bool txPool = false)
         {
             topic.ThrowIfNullOrEmpty("topic is empty");
@@ -51,7 +51,28 @@ namespace NknSdk.Common.Rpc
                 topic,
                 offset,
                 limit,
-                meta,
+                meta = true,
+                txPool
+            };
+
+            return await CallRpc<GetSubscribersWithMetadataResult>(nodeUri, "getsubscribers", parameters);
+        }
+
+        public static async Task<GetSubscribersResult> GetSubscribers(
+            string nodeUri,
+            string topic,
+            int offset = 0,
+            int limit = 1000,
+            bool txPool = false)
+        {
+            topic.ThrowIfNullOrEmpty("topic is empty");
+
+            var parameters = new
+            {
+                topic,
+                offset,
+                limit,
+                meta = false,
                 txPool
             };
 
@@ -120,7 +141,7 @@ namespace NknSdk.Common.Rpc
             return await CallRpc<string>(nodeUri, "sendrawtransaction", parameters);
         }
 
-        public static async Task<string> TransferTo(string toAddress, long amount, Wallet.Wallet wallet, WalletOptions options)
+        public static async Task<string> TransferTo(string toAddress, Amount amount, Wallet.Wallet wallet, WalletOptions options)
         {
             if (Address.IsValid(toAddress) == false)
             {
@@ -133,7 +154,7 @@ namespace NknSdk.Common.Rpc
             
             var programHash = Address.HexStringToProgramHash(signatureRedeem);
             
-            var payload = TransactionFactory.MakeTransferPayload(programHash, Address.ToProgramHash(toAddress), amount);
+            var payload = TransactionFactory.MakeTransferPayload(programHash, Address.ToProgramHash(toAddress), amount.Value);
             
             var tx = wallet.CreateTransaction(payload, nonce, options);
 
@@ -231,7 +252,8 @@ namespace NknSdk.Common.Rpc
                 throw new ServerException("rpc response is empty");
             }
 
-            var rpcResponse = JsonSerializer.Deserialize<RpcResponse<T>>(responseContent, StandardResolver.CamelCase);
+            //var rpcResponse = JsonSerializer.Deserialize<RpcResponse<T>>(responseContent, StandardResolver.CamelCase);
+            var rpcResponse = Newtonsoft.Json.JsonConvert.DeserializeObject<RpcResponse<T>>(responseContent);
 
             if (rpcResponse.IsSuccess == false)
             {
