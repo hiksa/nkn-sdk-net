@@ -1,9 +1,6 @@
-﻿using NknSdk.Wallet;
-using System;
-using System.Collections.Generic;
-using System.Runtime.InteropServices;
-using System.Text;
-using Xunit;
+﻿using Xunit;
+
+using NknSdk.Wallet.Models;
 
 namespace NknSdk.Tests.Wallet
 {

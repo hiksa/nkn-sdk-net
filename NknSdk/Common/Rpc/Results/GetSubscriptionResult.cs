@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace NknSdk.Common.Rpc.Results
+﻿namespace NknSdk.Common.Rpc.Results
 {
     public class GetSubscriptionResult
     {

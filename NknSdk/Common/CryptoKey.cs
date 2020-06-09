@@ -1,13 +1,11 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Text;
+
+using NSec.Cryptography;
+
 using NknSdk.Common.Exceptions;
 using NknSdk.Common.Extensions;
-using NknSdk.Common.Protobuf.Payloads;
-using NSec;
-using NSec.Cryptography;
 
 namespace NknSdk.Common
 {
@@ -84,7 +82,9 @@ namespace NknSdk.Common
             else
             {
                 var sharedKey = Chaos.NaCl.Ed25519.KeyExchange(otherPublicKey.FromHexString(), this.keyInfo.PrivateKey);
+
                 this.sharedKeyCache[otherPublicKey] = sharedKey;
+
                 return sharedKey;
             }
         }

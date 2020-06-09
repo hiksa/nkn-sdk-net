@@ -1,5 +1,4 @@
-﻿
-using System;
+﻿using System;
 
 using NknSdk.Common.Protobuf.SignatureChain;
 using NknSdk.Common.Protobuf.Transaction;

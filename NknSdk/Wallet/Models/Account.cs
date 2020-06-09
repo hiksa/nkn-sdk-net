@@ -1,6 +1,6 @@
 ﻿using NknSdk.Common;
 
-namespace NknSdk.Wallet
+namespace NknSdk.Wallet.Models
 {
     public class Account
     {
@@ -10,9 +10,9 @@ namespace NknSdk.Wallet
         {
             this.key = new CryptoKey(seedHex);
 
-            this.SignatureRedeem = NknSdk.Wallet.Address.PublicKeyToSignatureRedeem(this.key.PublicKey);
-            this.ProgramHash = NknSdk.Wallet.Address.HexStringToProgramHash(this.SignatureRedeem);
-            this.Address = NknSdk.Wallet.Address.FromProgramHash(this.ProgramHash);
+            this.SignatureRedeem = Common.Address.PublicKeyToSignatureRedeem(this.key.PublicKey);
+            this.ProgramHash = Common.Address.HexStringToProgramHash(this.SignatureRedeem);
+            this.Address = Common.Address.FromProgramHash(this.ProgramHash);
             this.Contract = Account.GenerateAccountContractString(this.SignatureRedeem, this.ProgramHash);
         }
 
@@ -32,9 +32,9 @@ namespace NknSdk.Wallet
 
         private static string GenerateAccountContractString(string signatureRedeem, string programHash)
         {
-            var contract = NknSdk.Wallet.Address.PrefixByteCountToHexString(signatureRedeem);
+            var contract = Common.Address.PrefixByteCountToHexString(signatureRedeem);
 
-            contract += NknSdk.Wallet.Address.PrefixByteCountToHexString("00");
+            contract += Common.Address.PrefixByteCountToHexString("00");
             contract += programHash;
 
             return contract;

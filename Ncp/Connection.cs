@@ -182,7 +182,7 @@ namespace Ncp
                     }
 
                     Console.WriteLine($"Sending session message. Packet Id: {sequenceId}, Data Length: {packet.Data.Length}, Data: {string.Join(", ", packet.Data.Take(10))}");
-                    await this.session.SendWithAsync(this.LocalClientId, this.RemoteClientId, buffer);
+                    await this.session.SendSessionDataAsync(this.LocalClientId, this.RemoteClientId, buffer);
                 }
                 catch (Exception e)
                 {
@@ -297,7 +297,7 @@ namespace Ncp
 
                     var buffer = ProtoSerializer.Serialize(packet);
 
-                    await this.session.SendWithAsync(this.LocalClientId, this.RemoteClientId, buffer);
+                    await this.session.SendSessionDataAsync(this.LocalClientId, this.RemoteClientId, buffer);
 
                     this.session.BytesReadSentTime = DateTime.Now;
                 }

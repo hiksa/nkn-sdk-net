@@ -1,4 +1,4 @@
-﻿namespace NknSdk.Client.Model
+﻿namespace NknSdk.Client.Network
 {
     public class UpdateSigChainBlockHashMessage : Message
     {

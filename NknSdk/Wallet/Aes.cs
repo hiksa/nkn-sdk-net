@@ -58,11 +58,6 @@ namespace NknSdk.Wallet
             }
         }
 
-        public static object Decrypt(string ciphertext, string password, object p)
-        {
-            throw new NotImplementedException();
-        }
-
         private static string DecryptStringFromBytesAes(byte[] cipherText, byte[] key, byte[] iv)
         {
             if (cipherText == null || cipherText.Length <= 0)

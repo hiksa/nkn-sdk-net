@@ -1,8 +1,6 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Text;
 
-namespace NknSdk.Wallet
+namespace NknSdk.Wallet.Models
 {
     public class Amount
     {

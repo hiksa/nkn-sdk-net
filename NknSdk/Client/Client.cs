@@ -2,53 +2,43 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
+using System.Threading.Channels;
 using System.Threading.Tasks;
 
-//using WebSocket4Net;
 using Utf8Json;
 using WebSocketSharp;
 
-using NknSdk.Client.Model;
+using NknSdk.Client.Network;
 using NknSdk.Common;
+using NknSdk.Common.Exceptions;
+using NknSdk.Common.Extensions;
 using NknSdk.Common.Protobuf.Payloads;
 using NknSdk.Common.Rpc;
 using NknSdk.Common.Rpc.Results;
 using NknSdk.Common.Protobuf;
 using NknSdk.Common.Protobuf.Messages;
-
-using static NknSdk.Client.Handlers;
-using System.ComponentModel.Design.Serialization;
-using System.Security.Cryptography;
-using Microsoft.VisualBasic;
-using NknSdk.Common.Exceptions;
-using System.Threading.Channels;
 using NknSdk.Wallet;
-using NknSdk.Common.Extensions;
 
 namespace NknSdk.Client
 {
     public class Client
     {
-        private ClientOptions options;
+        private readonly Wallet.Wallet wallet;
         private readonly CryptoKey key;
+
+        private bool isClosed;
         private string identifier;
-        public string address;
-
-        public event EventHandler Connected;
-        public event TextMessageHandler TextReceived;
-        public event DataMessageHandler DataReceived;
-
-        public IList<Action<ConnectRequest>> connectListeners = new List<Action<ConnectRequest>>();
-        public IList<Func<MessageHandlerRequest, Task<object>>> messageListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
-
-        private bool shouldReconnect;
         private int reconnectInterval;
+        private bool shouldReconnect;
+        private WebSocket ws;
+        private ClientOptions options;
+        private GetWsAddressResult remoteNode;
+
         private ClientResponseManager<string> textResponseManager;
         private ClientResponseManager<byte[]> binaryResponseManager;
-        private readonly Wallet.Wallet wallet;
-        private WebSocket ws;
-        private GetWsAddressResult remoteNode;
-        private bool isClosed;
+
+        public IList<Action<ConnectHandlerRequest>> connectListeners = new List<Action<ConnectHandlerRequest>>();
+        public IList<Func<MessageHandlerRequest, Task<object>>> messageListeners = new List<Func<MessageHandlerRequest, Task<object>>>();
 
         public Client(ClientOptions options)
         {
@@ -66,7 +56,7 @@ namespace NknSdk.Client
 
             this.key = key;
             this.identifier = identifier;
-            this.address = address;
+            this.Address = address;
 
             var walletOptions = new WalletOptions { Version = 1, SeedHex = key.Seed };
             this.wallet = new Wallet.Wallet(walletOptions);
@@ -77,6 +67,8 @@ namespace NknSdk.Client
 
             this.ConnectAsync();
         }
+
+        public string Address { get; }
 
         public string SignatureChainBlockHash { get; private set; }
 
@@ -90,58 +82,10 @@ namespace NknSdk.Client
 
         public string PublicKey => this.key.PublicKey;
 
-        public static string AddressToId(string address) => Hash.Sha256(address);
-
-        public static string AddressToPublicKey(string address)
-            => address
-                .Split(new char[] { '.' })
-                .LastOrDefault();
-
-        public static string AddIdentifier(string address, string identifier)
-        {
-            if (identifier == "")
-            {
-                return address;
-            }
-
-            return Client.AddIdentifierPrefix(address, "__" + identifier + "__");
-        }
-
-        public static string AddIdentifierPrefix(string identifier, string prefix)
-        {
-            if (identifier == "")
-            {
-                return "" + prefix;
-            }
-
-            if (prefix == "")
-            {
-                return "" + identifier;
-            }
-
-            return prefix + "." + identifier;
-        }
-
-        public static (string Address, string ClientId) RemoveIdentifier(string source)
-        {
-            var parts = source.Split('.');
-
-            if (Constants.MultiClientIdentifierRegex.IsMatch(parts[0]))
-            {
-                var address = string.Join(".", parts.Skip(1));
-                return (address, parts[0]);
-            }
-
-            return (source, "");
-        }
-
         public void OnMessage(Func<MessageHandlerRequest, Task<object>> func) => this.messageListeners.Add(func);
 
-        public void OnConnect(Action<ConnectRequest> func)
-        {
-            this.connectListeners.Add(func);
-        }
-
+        public void OnConnect(Action<ConnectHandlerRequest> func) => this.connectListeners.Add(func);
+        
         /// <summary>
         /// Send text message to a destination address
         /// </summary>
@@ -319,7 +263,7 @@ namespace NknSdk.Client
 
             var data = outboundMessage.ToBytes();
 
-            this.SendData(data);
+            this.SendThroughSocket(data);
 
             return payload.MessageId;
         }
@@ -390,7 +334,7 @@ namespace NknSdk.Client
 
             foreach (var message in messages)
             {
-                this.SendData(message.ToBytes());
+                this.SendThroughSocket(message.ToBytes());
             }
 
             return payload.MessageId;
@@ -510,7 +454,7 @@ namespace NknSdk.Client
 
             var messageBytes = message.ToBytes();
 
-            this.SendData(messageBytes);
+            this.SendThroughSocket(messageBytes);
         }
 
         private async Task ConnectAsync()
@@ -523,11 +467,11 @@ namespace NknSdk.Client
                 {
                     if (useTls)
                     {
-                        getWsAddressResult = await RpcClient.GetWssAddress(this.options.RpcServerAddress, this.address);
+                        getWsAddressResult = await RpcClient.GetWssAddress(this.options.RpcServerAddress, this.Address);
                     }
                     else
                     {
-                        getWsAddressResult = await RpcClient.GetWsAddress(this.options.RpcServerAddress, this.address);
+                        getWsAddressResult = await RpcClient.GetWsAddress(this.options.RpcServerAddress, this.Address);
                     }
                 }
                 catch (Exception)
@@ -546,7 +490,7 @@ namespace NknSdk.Client
             }
         }
 
-        private void SendData(byte[] data)
+        private void SendThroughSocket(byte[] data)
         {
             if (this.ws == null)
             {
@@ -580,7 +524,7 @@ namespace NknSdk.Client
             var result = new List<MessagePayload>();
             for (int i = 0; i < destinations.Count; i++)
             {
-                var publicKey = Client.AddressToPublicKey(destinations[i]);
+                var publicKey = Common.Address.AddressToPublicKey(destinations[i]);
                 var encryptedKey = this.Key.Encrypt(key, publicKey);
 
                 var mergedNonce = encryptedKey.Nonce.Concat(nonce).ToArray();
@@ -595,7 +539,7 @@ namespace NknSdk.Client
 
         private MessagePayload EncryptPayload(byte[] payload, string destination)
         {
-            var publicKey = Client.AddressToPublicKey(destination);
+            var publicKey = Common.Address.AddressToPublicKey(destination);
             var encryptedKey = this.key.Encrypt(payload, publicKey);
 
             var message = MessageFactory.MakeMessage(encryptedKey.Message, true, encryptedKey.Nonce);
@@ -613,7 +557,7 @@ namespace NknSdk.Client
                 var receipt = MessageFactory.MakeReceipt(this.key, previousSignatureHex);
                 var receiptBytes = receipt.ToBytes();
 
-                this.SendData(receiptBytes);
+                this.SendThroughSocket(receiptBytes);
             }
 
             var messagePayload = ProtoSerializer.Deserialize<MessagePayload>(inboundMessage.Payload);
@@ -661,7 +605,6 @@ namespace NknSdk.Client
             {
                 case PayloadType.Session:
                 case PayloadType.Binary:
-                    this.DataReceived?.Invoke(inboundMessage.Source, payload.Data);
 
                     var request = new MessageHandlerRequest
                     {
@@ -689,7 +632,7 @@ namespace NknSdk.Client
 
                     break;
                 case PayloadType.Text:
-                    this.TextReceived?.Invoke(inboundMessage.Source, textMessage);
+
                     break;
                 case PayloadType.Ack:
                     break;
@@ -796,7 +739,7 @@ namespace NknSdk.Client
 
             this.ws.OnOpen += (object sender, EventArgs e) =>
             {
-                var message = JsonSerializer.ToJsonString(new { Action = "setClient", Addr = this.address });
+                var message = JsonSerializer.ToJsonString(new { Action = "setClient", Addr = this.Address });
                 this.ws.Send(message);
 
                 this.shouldReconnect = true;
@@ -843,11 +786,9 @@ namespace NknSdk.Client
                             {
                                 foreach (var listener in this.connectListeners)
                                 {
-                                    listener(new ConnectRequest { Address = setClientMessage.Result.Node.Address });
+                                    listener(new ConnectHandlerRequest { Address = setClientMessage.Result.Node.Address });
                                 }
                             }
-
-                            this.Connected?.Invoke(this, new EventArgs());
                         }
 
                         break;
@@ -879,7 +820,7 @@ namespace NknSdk.Client
         private byte[] DecryptPayload(MessagePayload message, string sourceAddress)
         {
             var rawPayload = message.Payload;
-            var sourcePublicKey = Client.AddressToPublicKey(sourceAddress);
+            var sourcePublicKey = Common.Address.AddressToPublicKey(sourceAddress);
             var nonce = message.Nonce;
             var encryptedKey = message.EncryptedKey;
 

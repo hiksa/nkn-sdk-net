@@ -1,4 +1,5 @@
 ﻿using System.Collections.Generic;
+
 using ProtoBuf;
 
 namespace NknSdk.Common.Protobuf.SignatureChain

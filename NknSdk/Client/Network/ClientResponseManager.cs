@@ -1,12 +1,11 @@
-﻿using NknSdk.Common;
-using NknSdk.Common.Extensions;
-using NknSdk.Common.Protobuf.Payloads;
-using System;
-using System.Collections;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 
-namespace NknSdk.Client
+using NknSdk.Common.Extensions;
+using NknSdk.Common.Protobuf.Payloads;
+
+namespace NknSdk.Client.Network
 {
     public class ClientResponseManager<T>
     {

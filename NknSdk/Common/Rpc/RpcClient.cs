@@ -10,10 +10,8 @@ using NknSdk.Common.Protobuf;
 using NknSdk.Common.Protobuf.Transaction;
 using NknSdk.Common.Rpc.Results;
 using NknSdk.Common.Exceptions;
-using NknSdk.Wallet;
-using System.Runtime.CompilerServices;
-using WebSocketSharp;
 using NknSdk.Common.Extensions;
+using NknSdk.Wallet;
 
 namespace NknSdk.Common.Rpc
 {
@@ -124,7 +122,7 @@ namespace NknSdk.Common.Rpc
 
         public static async Task<string> TransferTo(string toAddress, long amount, Wallet.Wallet wallet, WalletOptions options)
         {
-            if (Address.IsCorrectAddress(toAddress) == false)
+            if (Address.IsValid(toAddress) == false)
             {
                 throw new Exception();
             }

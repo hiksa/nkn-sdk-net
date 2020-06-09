@@ -1,12 +1,10 @@
 ﻿using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using Microsoft.VisualBasic;
-using NknSdk.Common;
+
+using NknSdk.Client;
 using NknSdk.Common.Extensions;
 
-namespace NknSdk.Wallet
+namespace NknSdk.Common
 {
     public static class Address
     {
@@ -17,7 +15,7 @@ namespace NknSdk.Wallet
         public static readonly int PrefixLength = Address.Prefix.Length / 2;
         public static readonly int FullLength = Address.PrefixLength + Address.Uint160Length + Address.CheckSumLength;
 
-        public static bool IsCorrectAddress(string address)
+        public static bool IsValid(string address)
         {
             try
             {
@@ -105,6 +103,51 @@ namespace NknSdk.Wallet
             var result = addressBaseData.Concat(addressVerifyBytes);
 
             return result.Base58Encode();
+        }
+
+        public static string AddressToId(string address) => Hash.Sha256(address);
+
+        public static string AddressToPublicKey(string address)
+            => address
+                .Split(new char[] { '.' })
+                .LastOrDefault();
+
+        public static string AddIdentifier(string address, string identifier)
+        {
+            if (identifier == "")
+            {
+                return address;
+            }
+
+            return Address.AddIdentifierPrefix(address, "__" + identifier + "__");
+        }
+
+        public static string AddIdentifierPrefix(string identifier, string prefix)
+        {
+            if (identifier == "")
+            {
+                return "" + prefix;
+            }
+
+            if (prefix == "")
+            {
+                return "" + identifier;
+            }
+
+            return prefix + "." + identifier;
+        }
+
+        public static (string Address, string ClientId) RemoveIdentifier(string source)
+        {
+            var parts = source.Split('.');
+
+            if (Constants.MultiClientIdentifierRegex.IsMatch(parts[0]))
+            {
+                var address = string.Join(".", parts.Skip(1));
+                return (address, parts[0]);
+            }
+
+            return (source, "");
         }
 
         private static string GetVerificationCodeFromAddress(string address)

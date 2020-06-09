@@ -1,6 +1,6 @@
 ﻿using NknSdk.Common.Protobuf.Payloads;
 
-namespace NknSdk.Client.Model
+namespace NknSdk.Client.Network
 {
     public class MessageHandlerRequest
     {

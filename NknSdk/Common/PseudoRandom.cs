@@ -29,7 +29,9 @@ namespace NknSdk.Common
         public static long RandomLong(long min = 0, long max = long.MaxValue)
         {
             var buffer = new byte[8];
+
             random.NextBytes(buffer);
+
             var result = BitConverter.ToInt64(buffer, 0);
 
             return Math.Abs(result % (max - min)) + min;

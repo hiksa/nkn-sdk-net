@@ -1,8 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace NknSdk.Common.Protobuf
+﻿namespace NknSdk.Common.Protobuf
 {
     public interface ISerializable
     {

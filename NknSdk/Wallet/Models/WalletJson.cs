@@ -1,4 +1,4 @@
-﻿namespace NknSdk.Wallet
+﻿namespace NknSdk.Wallet.Models
 {
     public class WalletJson
     {

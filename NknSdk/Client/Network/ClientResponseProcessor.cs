@@ -3,7 +3,7 @@ using System.Threading.Channels;
 
 using NknSdk.Common.Extensions;
 
-namespace NknSdk.Client
+namespace NknSdk.Client.Network
 {
     public class ClientResponseProcessor<T>
     {

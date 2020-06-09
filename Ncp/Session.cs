@@ -48,7 +48,7 @@ namespace Ncp
             string remoteAddress,
             string[] localClientIds,
             List<string> remoteClientIds,
-            Func<string, string, byte[], Task> sendWithAsync,
+            Func<string, string, byte[], Task> sendSessionDataAsync,
             SessionConfiguration config)
         {
             this.Config = config;
@@ -58,7 +58,7 @@ namespace Ncp
             this.localClientIds = localClientIds;
             this.remoteClientIds = remoteClientIds;
 
-            this.SendWithAsync = sendWithAsync;
+            this.SendSessionDataAsync = sendSessionDataAsync;
 
             this.sendWindowSize = (uint)this.Config.SessionWindowSize;
             this.recieveWindowSize = (uint)this.Config.SessionWindowSize;
@@ -91,14 +91,13 @@ namespace Ncp
 
         public Context Context { get; }
 
-        public Func<string, string, byte[], Task> SendWithAsync { get; }
+        public Func<string, string, byte[], Task> SendSessionDataAsync { get; }
 
         public bool IsClosed { get; private set; }
 
         private bool IsStream => this.Config.NonStream == false;
 
-        public static string GetKey(string remoteAddress, string sessionId)
-            => remoteAddress + sessionId;
+        public static string MakeKey(string remoteAddress, string sessionId) => remoteAddress + sessionId;
 
         public static uint NextSequenceId(uint sequenceId, int step)
         {
@@ -752,7 +751,7 @@ namespace Ncp
                     var i = 0;
                     foreach (var connection in this.connections.Values)
                     {
-                        tasks[i] = Task.Run(async () => await this.SendWithAsync(connection.LocalClientId, connection.RemoteClientId, buffer));
+                        tasks[i] = Task.Run(async () => await this.SendSessionDataAsync(connection.LocalClientId, connection.RemoteClientId, buffer));
                         i++;
                     }
 
@@ -811,7 +810,6 @@ namespace Ncp
                     Data = this.sendBuffer
                 };
 
-           //     Console.WriteLine($"Queueing to send session data. Packet Id: {packet.SequenceId}, Data Length: {packet.Data?.Length}, Data: {(packet.Data == null ? string.Empty : string.Join(", ", packet.Data.Take(10)))}");
                 var buffer = ProtoSerializer.Serialize(packet);
 
                 this.sendWindowData.Add(sequenceId, buffer);
@@ -847,11 +845,12 @@ namespace Ncp
             var data = ProtoSerializer.Serialize(packet);
 
             var tasks = new List<Task>();
+
             if (this.connections != null && this.connections.Count > 0)
             {
                 foreach (var connection in this.connections.Values)
                 {
-                    var task = this.SendWithAsync(connection.LocalClientId, connection.RemoteClientId, data);
+                    var task = this.SendSessionDataAsync(connection.LocalClientId, connection.RemoteClientId, data);
 
                     tasks.Add(task.ToTimeoutTask(timeout, new WriteDeadlineExceededException()));
                 }
@@ -866,7 +865,7 @@ namespace Ncp
                         remoteClientId = this.remoteClientIds[i % this.remoteClientIds.Count];
                     }
 
-                    var task = this.SendWithAsync(this.localClientIds[i], remoteClientId, data);
+                    var task = this.SendSessionDataAsync(this.localClientIds[i], remoteClientId, data);
 
                     tasks.Add(task.ToTimeoutTask(timeout, new WriteDeadlineExceededException()));
                 }
@@ -888,6 +887,54 @@ namespace Ncp
                 return;
             }
 
+            this.ValidateHandshakePacket(packet);
+            this.InitializeConnections(packet);
+
+            this.remoteClientIds = packet.ClientIds;
+            this.sendBuffer = new byte[0];
+
+            this.sendChannel = Channel.CreateUnbounded<uint?>();
+            this.resendChannel = Channel.CreateBounded<uint?>(this.Config.MaxConnectionWindowSize * this.connections.Count);
+            this.sendWindowUpdateChannel = Channel.CreateBounded<uint?>(1);
+            this.recieveDataUpdateChannel = Channel.CreateBounded<uint?>(1);
+
+            this.sendWindowData = new ConcurrentDictionary<uint, byte[]>();
+            this.recieveWindowData = new ConcurrentDictionary<uint, byte[]>();
+            this.isEstablished = true;
+
+            var cts = new CancellationTokenSource();
+            var channelTasks = new List<Task<Channel<uint?>>>
+            {
+                this.onAcceptChannel.Push(null, cts.Token),
+
+                Constants.ClosedChannel.Shift(cts.Token)
+            };
+
+            channelTasks.FirstAsync(cts);
+        }
+
+        private void InitializeConnections(Packet packet)
+        {
+            var connectionsCount = this.localClientIds.Count();
+            if (packet.ClientIds.Count < connectionsCount)
+            {
+                connectionsCount = packet.ClientIds.Count;
+            }
+
+            IDictionary<string, Connection> connections = new ConcurrentDictionary<string, Connection>();
+            for (int i = 0; i < connectionsCount; i++)
+            {
+                var connection = new Connection(this, this.localClientIds[i], packet.ClientIds[i]);
+                var connectionKey = Connection.GetKey(connection.LocalClientId, connection.RemoteClientId);
+
+                connections.Add(connectionKey, connection);
+            }
+
+            this.connections = connections;
+        }
+
+        private void ValidateHandshakePacket(Packet packet)
+        {
             if (packet.WindowSize == 0)
             {
                 throw new InvalidPacketException("WindowSize is zero");
@@ -912,42 +959,6 @@ namespace Ncp
             {
                 throw new InvalidPacketException("ClientIDs is empty");
             }
-
-            var connectionsCount = this.localClientIds.Count();
-            if (packet.ClientIds.Count < connectionsCount)
-            {
-                connectionsCount = packet.ClientIds.Count;
-            }
-
-            IDictionary<string, Connection> connections = new ConcurrentDictionary<string, Connection>();
-            for (int i = 0; i < connectionsCount; i++)
-            {
-                var connection = new Connection(this, this.localClientIds[i], packet.ClientIds[i]);
-                var connectionKey = Connection.GetKey(connection.LocalClientId, connection.RemoteClientId);
-                connections.Add(connectionKey, connection);
-            }
-
-            this.connections = connections;
-
-            this.remoteClientIds = packet.ClientIds;
-            this.sendChannel = Channel.CreateUnbounded<uint?>();
-            this.resendChannel = Channel.CreateBounded<uint?>(this.Config.MaxConnectionWindowSize * connectionsCount);
-            this.sendWindowUpdateChannel = Channel.CreateBounded<uint?>(1);
-            this.recieveDataUpdateChannel = Channel.CreateBounded<uint?>(1);
-
-            this.sendBuffer = new byte[0];
-            this.sendWindowData = new ConcurrentDictionary<uint, byte[]>();
-            this.recieveWindowData = new ConcurrentDictionary<uint, byte[]>();
-            this.isEstablished = true;
-
-            var cts = new CancellationTokenSource();
-            var channelTasks = new List<Task<Channel<uint?>>>
-            {
-                this.onAcceptChannel.Push(null, cts.Token),
-                Constants.ClosedChannel.Shift(cts.Token)
-            };
-
-            channelTasks.FirstAsync(cts);
         }
 
         private async Task SendClosePacketAsync()
@@ -964,7 +975,7 @@ namespace Ncp
             var i = 0;
             foreach (var connection in this.connections.Values)
             {
-                var task = this.SendWithAsync(connection.LocalClientId, connection.RemoteClientId, buffer);
+                var task = this.SendSessionDataAsync(connection.LocalClientId, connection.RemoteClientId, buffer);
 
                 tasks[i] = task.ToTimeoutTask(connection.RetransmissionTimeout, new WriteDeadlineExceededException());
             }

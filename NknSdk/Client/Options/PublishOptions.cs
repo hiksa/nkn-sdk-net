@@ -1,4 +1,4 @@
-﻿namespace NknSdk.Client.Model
+﻿namespace NknSdk.Client
 {
     public class PublishOptions
     {

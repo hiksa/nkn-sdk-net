@@ -111,7 +111,7 @@ namespace NknSdk.Client
             var signatureChain = new SignatureChain
             {
                 Nonce = (uint)PseudoRandom.RandomInt(),
-                SourceId = Client.AddressToId(client.address).FromHexString(),
+                SourceId = Address.AddressToId(client.Address).FromHexString(),
                 SourcePublicKey = client.PublicKey.FromHexString()
             };
 
@@ -124,8 +124,8 @@ namespace NknSdk.Client
 
             for (int i = 0; i < destinations.Count; i++)
             {
-                signatureChain.DestinationId = Client.AddressToId(destinations[i]).FromHexString();
-                signatureChain.DestinationPublicKey = Client.AddressToPublicKey(destinations[i]).FromHexString();
+                signatureChain.DestinationId = Address.AddressToId(destinations[i]).FromHexString();
+                signatureChain.DestinationPublicKey = Address.AddressToPublicKey(destinations[i]).FromHexString();
 
                 if (payloads.Count > 1)
                 {

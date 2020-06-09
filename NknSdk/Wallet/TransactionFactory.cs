@@ -2,6 +2,7 @@
 using NknSdk.Common.Extensions;
 using NknSdk.Common.Protobuf;
 using NknSdk.Common.Protobuf.Transaction;
+using NknSdk.Wallet.Models;
 
 namespace NknSdk.Wallet
 {

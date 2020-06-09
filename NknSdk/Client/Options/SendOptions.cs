@@ -1,6 +1,6 @@
 ﻿using NknSdk.Common;
 
-namespace NknSdk.Client.Model
+namespace NknSdk.Client
 {
     public class SendOptions
     {

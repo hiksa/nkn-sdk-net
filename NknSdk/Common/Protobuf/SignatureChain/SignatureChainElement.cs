@@ -1,5 +1,4 @@
-﻿using NknSdk.Common.Protobuf.Messages;
-using ProtoBuf;
+﻿using ProtoBuf;
 
 namespace NknSdk.Common.Protobuf.SignatureChain
 {

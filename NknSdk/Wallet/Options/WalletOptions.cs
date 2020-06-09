@@ -1,5 +1,7 @@
 ﻿using System.Collections.Generic;
 
+using NknSdk.Wallet.Models;
+
 namespace NknSdk.Wallet
 {
     public class WalletOptions
