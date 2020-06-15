@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -17,12 +16,37 @@ namespace Ncp
             {
                 try
                 {
-                    return await channel.Reader.ReadAsync().AsTask();
+                    return await channel.Reader.ReadAsync(token).AsTask();
                 }
                 catch (ChannelClosedException)
                 {
                     return default;
                 }
+                catch (OperationCanceledException)
+                {
+                    return default;
+                }
+            }, token);
+        }
+
+        public static Task<Channel<T>> WaitToRead<T>(this Channel<T> channel, CancellationToken token = default)
+        {
+            return Task.Run(async delegate
+            {
+                try
+                {
+                    await channel.Reader.WaitToReadAsync(token);
+                }
+                catch (ChannelClosedException)
+                {
+                    return channel;
+                }
+                catch (OperationCanceledException)
+                {
+                    return channel;
+                }
+
+                return channel;
             }, token);
         }
 
@@ -32,9 +56,13 @@ namespace Ncp
             {
                 try
                 {
-                    await channel.Reader.ReadAsync();
+                    await channel.Reader.ReadAsync(token);
                 }
                 catch (ChannelClosedException)
+                {
+                    return channel;
+                }
+                catch (OperationCanceledException)
                 {
                     return channel;
                 }
@@ -47,16 +75,26 @@ namespace Ncp
         {
             return Task.Run(async delegate
             {
-                await channel.Writer.WriteAsync(value);
+                try
+                {
+                    await channel.Writer.WriteAsync(value, token);
+                }
+                catch (ChannelClosedException)
+                {
+                    return channel;
+                }
+                catch (OperationCanceledException)
+                {
+                    return channel;
+                }
+
                 return channel;
             }, token);
         }
 
         public static async Task<Channel<T>> FirstAsync<T>(this IEnumerable<Task<Channel<T>>> tasks, CancellationTokenSource tokenSource = default)
         {
-            var task = await Task.WhenAny(tasks);
-
-            var channel = await task;
+            var channel = await await Task.WhenAny(tasks);
 
             tokenSource.Cancel();
 
@@ -67,9 +105,7 @@ namespace Ncp
         {
             try
             {
-                var task = await Task.WhenAny(tasks);
-
-                var result = await task;
+                var result = await await Task.WhenAny(tasks);
 
                 tokenSource.Cancel();
 
@@ -84,39 +120,42 @@ namespace Ncp
         public static Channel<uint?> ToTimeoutChannel(this int timeout)
         {
             var channel = Channel.CreateBounded<uint?>(1);
-            Task.Run(async delegate
+            Timer timer = default;
+                
+            timer = new Timer(async state =>
             {
-                await Task.Delay(timeout);
                 await channel.CompleteAsync();
-            });
+                await timer.DisposeAsync();
+            },
+            null,
+            timeout,
+            Timeout.Infinite);
 
             return channel;
         }
 
-        public static Task<Task> ToTimeoutTask(this Task task, int timeout, Exception error)
+        public static Task ToTimeoutTask(this Task task, int timeout, Exception error)
         {
-            var mainTaskCancellationTokenSource = new CancellationTokenSource();
-            return Task.Factory.StartNew(async delegate
+            Timer timer = null;
+            var hasTimedOut = false;
+
+            if (timeout > 0)
             {
-                var cancellationTokenSource = new CancellationTokenSource();
-                Task timer;
-                if (timeout > 0)
+                timer = new Timer(state => hasTimedOut = true, null, timeout, Timeout.Infinite);
+            }
+
+            return Task.Run(() =>
+            {
+                while (task.IsCompleted == false)
                 {
-                    timer = Task.Run(async delegate {
-                        await Task.Delay(timeout);
-
-                        mainTaskCancellationTokenSource.Cancel();
-
+                    if (hasTimedOut)
+                    {
                         throw error;
-                    }, cancellationTokenSource.Token);
+                    }
                 }
 
-                await task.ContinueWith(x =>
-                {
-                    cancellationTokenSource.Cancel();
-                });
-
-            }, mainTaskCancellationTokenSource.Token);
+                timer.Dispose();
+            });
         }
     }
 }

@@ -1,4 +1,4 @@
-﻿namespace NknSdk.Client.Network
+﻿namespace NknSdk.Client
 {
     public class SendMessageResponse<TResult>
     {
@@ -6,6 +6,6 @@
 
         public TResult Result { get; set; }
 
-        public string Error { get; set; }
+        public string ErrorMessage { get; set; }
     }
 }

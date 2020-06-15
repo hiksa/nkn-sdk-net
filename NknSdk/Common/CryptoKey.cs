@@ -11,8 +11,8 @@ namespace NknSdk.Common
 {
     public class CryptoKey
     {
-        private readonly IDictionary<string, byte[]> sharedKeyCache;
         private readonly CryptoKeyInfo keyInfo;
+        private readonly IDictionary<string, byte[]> sharedKeyCache;
 
         public CryptoKey() : this(PseudoRandom.RandomBytes(Hash.SeedLength))
         {
@@ -28,7 +28,7 @@ namespace NknSdk.Common
             {
                 try
                 {
-                    this.Seed = seed.ToHexString();
+                    this.SeedHex = seed.ToHexString();
                 }
                 catch (Exception)
                 {
@@ -37,7 +37,7 @@ namespace NknSdk.Common
             }
             else
             {
-                this.Seed = PseudoRandom.RandomBytesAsHexString(Hash.SeedLength);
+                this.SeedHex = PseudoRandom.RandomBytesAsHexString(Hash.SeedLength);
             }
 
             this.sharedKeyCache = new ConcurrentDictionary<string, byte[]>();
@@ -47,7 +47,7 @@ namespace NknSdk.Common
 
         public string PublicKey => this.keyInfo.PublicKey;
 
-        public string Seed { get; }
+        public string SeedHex { get; }
 
         public (byte[] Message, byte[] Nonce) Encrypt(byte[] message, string destinationPublicKey)
         {

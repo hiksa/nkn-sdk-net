@@ -2,8 +2,8 @@
 {
     public class GetNonceByAddrResult
     {
-        public ulong? Nonce { get; set; }
+        public long? Nonce { get; set; }
 
-        public ulong? NonceInTxPool { get; set; }
+        public long? NonceInTxPool { get; set; }
     }
 }

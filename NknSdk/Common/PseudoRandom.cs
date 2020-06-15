@@ -15,11 +15,11 @@ namespace NknSdk.Common
 
         public static byte[] RandomBytes(int length)
         {
-            var result = new byte[length];
+            var buffer = new byte[length];
 
-            random.NextBytes(result);
+            random.NextBytes(buffer);
 
-            return result;
+            return buffer;
         }
 
         public static string RandomBytesAsHexString(int length) => PseudoRandom.RandomBytes(length).ToHexString();

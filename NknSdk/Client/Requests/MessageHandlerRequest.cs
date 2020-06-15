@@ -1,12 +1,14 @@
 ﻿using NknSdk.Common.Protobuf.Payloads;
 
-namespace NknSdk.Client.Network
+namespace NknSdk.Client.Requests
 {
     public class MessageHandlerRequest
     {
         public string Source { get; set; }
 
         public byte[] Payload { get; set; }
+
+        public string TextMessage { get; set; }
 
         public PayloadType PayloadType { get; set; }
 

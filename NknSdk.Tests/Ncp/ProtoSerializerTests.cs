@@ -11,7 +11,7 @@ namespace NknSdk.Tests.Ncp
         [Fact]
         public void Packet_ShouldSerialize_Properly()
         {
-            var input = new List<(uint[] AckStartSeqList, uint[] AckSeqCountList, uint BytesRead, byte[] Result)>
+            var input = new List<(uint[] ackStartSeqList, uint[] ackSeqCountList, uint bytesRead, byte[] result)>
             {
                 (new uint[] { 1 }, new uint[] { }, 1, new byte[] { 26, 1, 1, 40, 1 }),
                 (new uint[] { 6 }, new uint[] { }, 6, new byte[] { 26, 1, 6, 40, 6 }),
@@ -19,17 +19,17 @@ namespace NknSdk.Tests.Ncp
                 (new uint[] { 8 }, new uint[] { }, 8, new byte[] { 26, 1, 8, 40, 8 }),
             };
 
-            foreach (var item in input)
+            foreach (var (ackStartSeqList, ackSeqCountList, BytesRead, Result) in input)
             {
                 var packet = new Packet
                 {
-                    AckStartSeqs = item.AckStartSeqList,
-                    BytesRead = item.BytesRead
+                    AckStartSeqs = ackStartSeqList,
+                    BytesRead = BytesRead
                 };
 
                 var serialized = ProtoSerializer.Serialize(packet);
 
-                Assert.Equal(item.Result, serialized);
+                Assert.Equal(Result, serialized);
             }
         }
     }

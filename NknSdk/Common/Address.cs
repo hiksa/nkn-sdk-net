@@ -119,7 +119,7 @@ namespace NknSdk.Common
                 return address;
             }
 
-            return Address.AddIdentifierPrefix(address, "__" + identifier + "__");
+            return Address.AddIdentifierPrefix(address, $"__{identifier}__");
         }
 
         public static string AddIdentifierPrefix(string identifier, string prefix)

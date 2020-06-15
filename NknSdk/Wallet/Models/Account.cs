@@ -26,7 +26,7 @@ namespace NknSdk.Wallet.Models
 
         public string PublicKey => this.key.PublicKey;
 
-        public string Seed => this.key.Seed;
+        public string Seed => this.key.SeedHex;
 
         public byte[] Sign(byte[] message) => this.key.Sign(message);
 

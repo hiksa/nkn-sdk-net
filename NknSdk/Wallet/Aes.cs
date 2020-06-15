@@ -8,16 +8,14 @@ namespace NknSdk.Wallet
 {
     public static class Aes
     {
-        public static string Encrypt(string plainText, string password, byte[] iv)
+        public static string Encrypt(string plainText, string keyHex, byte[] iv)
         {
-            return EncryptStringToBytesAes(plainText, password.FromHexString(), iv).ToHexString();
+            return EncryptStringToBytesAes(plainText, keyHex.FromHexString(), iv).ToHexString();
         }
 
-        public static string Decrypt(string cipherText, string password, byte[] iv)
+        public static string Decrypt(string cipherTextHex, string keyHex, byte[] iv)
         {
-            var bytes = cipherText.FromHexString();
-
-            return DecryptStringFromBytesAes(bytes, password.FromHexString(), iv);
+            return DecryptStringFromBytesAes(cipherTextHex.FromHexString(), keyHex.FromHexString(), iv);
         }
 
         private static byte[] EncryptStringToBytesAes(string plainText, byte[] key, byte[] iv)

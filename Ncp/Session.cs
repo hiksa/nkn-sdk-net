@@ -2,39 +2,38 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Runtime.InteropServices.ComTypes;
 using System.Threading.Tasks;
 using System.Threading.Channels;
-using Open.ChannelExtensions;
 using System.Threading;
 using System.Collections.Concurrent;
 using Ncp.Exceptions;
+using Open.ChannelExtensions;
 
 namespace Ncp
 {
     public class Session
     {
-        private readonly string localAddress;
-        private readonly string remoteAddress;
+        private const int DefaultStepSize = 1;
+
+        private readonly object syncLock = new object();
         private readonly string[] localClientIds;
         private IList<string> remoteClientIds;
-        public Channel<uint?> resendChannel;
         private Channel<uint?> sendChannel;
         private Channel<uint?> sendWindowUpdateChannel;
         private Channel<uint?> recieveDataUpdateChannel;
         private readonly Channel<uint?> onAcceptChannel;
         private IDictionary<uint, byte[]> sendWindowData;
-        private ConcurrentDictionary<uint, byte[]> recieveWindowData;
+        private ConcurrentDictionary<uint, byte[]> receiveWindowData;
         private byte[] sendBuffer;
         private uint sendMtu;
-        private uint sendWindowEndSeq;
+        private uint sendWindowEndSequenceId;
         private uint sendWindowSize;
-        private uint sendWindowStartSeq;
-        private readonly uint recieveWindowSize;
+        private uint sendWindowStartSequenceId;
+        private readonly uint receiveWindowSize;
         private readonly uint recieveMtu;
-        private uint recieveWindowStartSeq;
-        private int recieveWindowUsed;
-        private ulong bytesWrite;
+        private uint receiveWindowStartSeq;
+        private int receiveWindowUsed;
+        private ulong totalBytesWritten;
         private DateTime bytesReadUpdateTime;
         private ulong remoteBytesRead;
         private Context readContext;
@@ -48,32 +47,32 @@ namespace Ncp
             string remoteAddress,
             string[] localClientIds,
             List<string> remoteClientIds,
-            Func<string, string, byte[], Task> sendSessionDataAsync,
-            SessionConfiguration config)
+            Func<string, string, byte[], Task> sendSessionDataHandler,
+            SessionOptions options)
         {
-            this.Config = config;
+            this.Options = options;
 
-            this.localAddress = localAddress;
-            this.remoteAddress = remoteAddress;
+            this.LocalAddress = localAddress;
+            this.RemoteAddress = remoteAddress;
             this.localClientIds = localClientIds;
             this.remoteClientIds = remoteClientIds;
 
-            this.SendSessionDataAsync = sendSessionDataAsync;
+            this.SendDataAsync = sendSessionDataHandler;
 
-            this.sendWindowSize = (uint)this.Config.SessionWindowSize;
-            this.recieveWindowSize = (uint)this.Config.SessionWindowSize;
+            this.sendWindowSize = (uint)this.Options.SessionWindowSize;
+            this.receiveWindowSize = (uint)this.Options.SessionWindowSize;
 
-            this.sendMtu = (uint)this.Config.Mtu;
-            this.recieveMtu = (uint)this.Config.Mtu;
+            this.sendMtu = (uint)this.Options.Mtu;
+            this.recieveMtu = (uint)this.Options.Mtu;
 
-            this.sendWindowStartSeq = Constants.MinSequenceId;
-            this.sendWindowEndSeq = Constants.MinSequenceId;
-            this.recieveWindowStartSeq = Constants.MinSequenceId;
+            this.sendWindowStartSequenceId = Constants.MinSequenceId;
+            this.sendWindowEndSequenceId = Constants.MinSequenceId;
+            this.receiveWindowStartSeq = Constants.MinSequenceId;
 
-            this.recieveWindowUsed = 0;
-            this.bytesWrite = 0;
-            this.BytesRead = 0;
-            this.BytesReadSentTime = DateTime.Now;
+            this.receiveWindowUsed = 0;
+            this.totalBytesWritten = 0;
+            this.TotalBytesRead = 0;
+            this.AckSentTime = DateTime.Now;
             this.bytesReadUpdateTime = DateTime.Now;
             this.remoteBytesRead = 0;
 
@@ -83,23 +82,29 @@ namespace Ncp
             this.SetTimeout(0);
         }
 
-        public SessionConfiguration Config { get; }
-
-        public DateTime BytesReadSentTime { get; set; }
-
-        public uint BytesRead { get; private set; }
+        public SessionOptions Options { get; }
 
         public Context Context { get; }
 
-        public Func<string, string, byte[], Task> SendSessionDataAsync { get; }
+        public string LocalAddress { get; }
+
+        public string RemoteAddress { get; }
+
+        public Func<string, string, byte[], Task> SendDataAsync { get; }
+
+        public Channel<uint?> ResendChannel { get; private set; }
+
+        public uint TotalBytesRead { get; private set; }
 
         public bool IsClosed { get; private set; }
 
-        private bool IsStream => this.Config.NonStream == false;
+        public DateTime AckSentTime { get; set; }
+
+        private bool IsStream => this.Options.NonStream == false;
 
         public static string MakeKey(string remoteAddress, string sessionId) => remoteAddress + sessionId;
 
-        public static uint NextSequenceId(uint sequenceId, int step)
+        public static uint NextSequenceId(uint sequenceId, int step = Session.DefaultStepSize)
         {
             var max = uint.MaxValue - Constants.MinSequenceId + 1;
             var result = (sequenceId - Constants.MinSequenceId + step) % max;
@@ -121,41 +126,6 @@ namespace Ncp
             return target >= start || target < end;
         }
 
-        public static int CompareSequenceIds(uint sequenceId1, uint sequenceId2)
-        {
-            if (sequenceId1 == sequenceId2)
-            {
-                return 0;
-            }
-
-            if (sequenceId1 < sequenceId2)
-            {
-                if (sequenceId2 - sequenceId1 < uint.MaxValue / 2)
-                {
-                    return -1;
-                }
-
-                return 1;
-            }
-
-            if (sequenceId1 - sequenceId2 < uint.MaxValue / 2)
-            {
-                return 1;
-            }
-
-            return -1;
-        }
-
-        private ulong GetSendWindowUsed()
-        {
-            if (this.bytesWrite > this.remoteBytesRead)
-            {
-                return this.bytesWrite - this.remoteBytesRead;
-            }
-
-            return 0;
-        }
-
         public byte[] GetDataToSend(uint sequenceId) => this.sendWindowData[sequenceId];
 
         public int GetConnWindowSize()
@@ -169,13 +139,15 @@ namespace Ncp
             return windowSize;
         }
 
+        public void SetLinger(int linger) => this.Options.Linger = linger;
+
         public async Task<uint> GetResendSequenceAsync()
         {
             var cts = new CancellationTokenSource();
             var tasks = new List<Task<uint?>>
             {
-                this.resendChannel.ShiftValue(cts.Token),
-                this.Context.Done.ShiftValue(cts.Token),
+                this.ResendChannel.ShiftValue(cts.Token),
+                this.Context.DoneChannel.ShiftValue(cts.Token),
                 Constants.ClosedChannel.ShiftValue(cts.Token)
             };
 
@@ -198,9 +170,9 @@ namespace Ncp
             var cts = new CancellationTokenSource();
             var tasks = new List<Task<uint?>>
             {
-                this.resendChannel.ShiftValue(cts.Token),
+                this.ResendChannel.ShiftValue(cts.Token),
                 this.sendChannel.ShiftValue(cts.Token),
-                this.Context.Done.ShiftValue(cts.Token)
+                this.Context.DoneChannel.ShiftValue(cts.Token)
             };
 
             var value = await tasks.FirstValueAsync(cts);
@@ -212,7 +184,7 @@ namespace Ncp
             return value;
         }
 
-        public async Task ReceiveWithAsync(string localClientId, string remoteClientId, byte[] buffer)
+        public async Task ReceiveWithClientAsync(string localClientId, string remoteClientId, byte[] buffer)
         {
             if (this.IsClosed)
             {
@@ -220,13 +192,12 @@ namespace Ncp
             }
 
             var packet = ProtoSerializer.Deserialize<Packet>(buffer);
+            //if (packet.Data != null)
+            //{
+            //    Console.WriteLine($"Receiving session message. Packet Id: {packet.SequenceId}, Data Lengtht: {packet.Data?.Length}, Data: {(packet.Data == null ? string.Empty : string.Join(", ", packet.Data.Take(10)))}");
+            //}
 
-            if (packet.Data != null)
-            {
-                Console.WriteLine($"Receiving session message. Packet Id: {packet.SequenceId}, Data Lengtht: {packet.Data?.Length}, Data: {(packet.Data == null ? string.Empty : string.Join(", ", packet.Data.Take(10)))}");
-            }
-
-            if (packet.IsClosed)
+            if (packet.IsClose)
             {
                 this.HandleClosePacket();
                 return;
@@ -248,7 +219,7 @@ namespace Ncp
                     throw new InvalidPacketException("AckStartSeq and AckSeqCount should have the same length if both are non-empty");
                 }
 
-                var count = 0;
+                int count;
                 if (packet.AckStartSeqs.Length > 0)
                 {
                     count = packet.AckStartSeqs.Length;
@@ -258,68 +229,74 @@ namespace Ncp
                     count = packet.AckSeqCounts.Length;
                 }
 
-                uint ackStartSequence;
-                uint ackEndSequence;
+                uint ackStartSequenceId;
+                uint ackEndSequenceId;
 
                 for (int i = 0; i < count; i++)
                 {
                     if (packet.AckStartSeqs.Length > 0)
                     {
-                        ackStartSequence = packet.AckStartSeqs[i];
+                        ackStartSequenceId = packet.AckStartSeqs[i];
                     }
                     else
                     {
-                        ackStartSequence = Constants.MinSequenceId;
+                        ackStartSequenceId = Constants.MinSequenceId;
                     }
 
                     if (packet.AckSeqCounts?.Length > 0)
                     {
                         var step = (int)packet.AckSeqCounts[i];
-                        ackEndSequence = Session.NextSequenceId(ackStartSequence, step);
+                        ackEndSequenceId = Session.NextSequenceId(ackStartSequenceId, step);
                     }
                     else
                     {
-                        ackEndSequence = Session.NextSequenceId(ackStartSequence, 1);
+                        ackEndSequenceId = Session.NextSequenceId(ackStartSequenceId);
                     }
 
-                    var sequenceInBetween = IsSequenceInbetween(
-                        this.sendWindowStartSeq,
-                        this.sendWindowEndSeq,
-                        Session.NextSequenceId(ackEndSequence, -1));
+                    var nextSequenceAvailable = Session.IsSequenceInbetween(
+                        this.sendWindowStartSequenceId,
+                        this.sendWindowEndSequenceId,
+                        Session.NextSequenceId(ackEndSequenceId, -Session.DefaultStepSize));
 
-                    if (sequenceInBetween)
+                    if (nextSequenceAvailable)
                     {
-                        if (IsSequenceInbetween(this.sendWindowStartSeq, this.sendWindowEndSeq, ackStartSequence) == false)
+                        var ackIsInBounds = Session.IsSequenceInbetween(
+                            this.sendWindowStartSequenceId,
+                            this.sendWindowEndSequenceId,
+                            ackStartSequenceId);
+
+                        if (ackIsInBounds == false)
                         {
-                            ackStartSequence = this.sendWindowStartSeq;
+                            ackStartSequenceId = this.sendWindowStartSequenceId;
                         }
 
                         for (
-                            var seq = ackStartSequence;
-                            IsSequenceInbetween(ackStartSequence, ackEndSequence, seq);
-                            seq = Session.NextSequenceId(seq, 1))
+                            var currentSequenceId = ackStartSequenceId;
+                            Session.IsSequenceInbetween(ackStartSequenceId, ackEndSequenceId, currentSequenceId);
+                            currentSequenceId = Session.NextSequenceId(currentSequenceId))
                         {
                             foreach (var connection in this.connections)
                             {
                                 var isSentByMe = connection.Key == Connection.GetKey(localClientId, remoteClientId);
-                                connection.Value.ReceiveAckAsync(seq, isSentByMe);
+
+                                connection.Value.ReceiveAck(currentSequenceId, isSentByMe);
                             }
 
-                            this.sendWindowData.Remove(seq);
+                            this.sendWindowData.Remove(currentSequenceId);
                         }
 
-                        if (ackStartSequence == this.sendWindowStartSeq)
+                        if (ackStartSequenceId == this.sendWindowStartSequenceId)
                         {
                             while (true)
                             {
-                                this.sendWindowStartSeq = NextSequenceId(this.sendWindowStartSeq, 1);
+                                this.sendWindowStartSequenceId = Session.NextSequenceId(this.sendWindowStartSequenceId);
 
-                                if (this.sendWindowData.ContainsKey(this.sendWindowStartSeq))
+                                if (this.sendWindowData.ContainsKey(this.sendWindowStartSequenceId))
                                 {
                                     break;
                                 }
 
-                                if (this.sendWindowStartSeq == this.sendWindowEndSeq)
+                                if (this.sendWindowStartSequenceId == this.sendWindowEndSequenceId)
                                 {
                                     break;
                                 }
@@ -350,19 +327,19 @@ namespace Ncp
                     throw new DataSizeTooLargeException();
                 }
 
-                if (CompareSequenceIds(packet.SequenceId, this.recieveWindowStartSeq) >= 0)
+                if (Session.CompareSequenceIds(packet.SequenceId, this.receiveWindowStartSeq) >= 0)
                 {
-                    if (this.recieveWindowData.ContainsKey(packet.SequenceId) == false)
+                    if (this.receiveWindowData.ContainsKey(packet.SequenceId) == false)
                     {
-                        if (this.recieveWindowUsed + packet.Data.Length > this.recieveWindowSize)
+                        if (this.receiveWindowUsed + packet.Data.Length > this.receiveWindowSize)
                         {
                             throw new RecieveWindowFullException();
                         }
 
-                        this.recieveWindowData.TryAdd(packet.SequenceId, packet.Data);
-                        this.recieveWindowUsed += packet.Data.Length;
+                        this.receiveWindowData.TryAdd(packet.SequenceId, packet.Data);
+                        this.receiveWindowUsed += packet.Data.Length;
 
-                        if (packet.SequenceId == this.recieveWindowStartSeq)
+                        if (packet.SequenceId == this.receiveWindowStartSeq)
                         {
                             var cts2 = new CancellationTokenSource();
                             var channelTasks2 = new List<Task<Channel<uint?>>>
@@ -441,7 +418,7 @@ namespace Ncp
 
             this.isAccepted = true;
 
-            await this.SendHandshakePacketAsync(this.Config.MaxRetransmissionTimeout);
+            await this.SendHandshakePacketAsync(this.Options.MaxRetransmissionTimeout);
         }
 
         public async Task<byte[]> ReadAsync(int maxSize = 0)
@@ -465,7 +442,7 @@ namespace Ncp
                         throw this.readContext.Error;
                     }
 
-                    if (this.recieveWindowData.ContainsKey(this.recieveWindowStartSeq))
+                    if (this.receiveWindowData.ContainsKey(this.receiveWindowStartSeq))
                     {
                         break;
                     }
@@ -476,101 +453,107 @@ namespace Ncp
                     {
                         this.recieveDataUpdateChannel.Shift(cts.Token),
                         timeout.Shift(cts.Token),
-                        this.readContext.Done.Shift(cts.Token)
+                        this.readContext.DoneChannel.Shift(cts.Token)
                     };
 
                     var channel = await channelTasks.FirstAsync(cts);
-                    if (channel == this.readContext.Done)
+                    if (channel == this.readContext.DoneChannel)
                     {
                         throw this.readContext.Error;
                     }
                 }
 
                 byte[] buffer = default;
-                int bytesReceived = 0;
+                var currentBytesReceived = 0;
 
-                var data = this.recieveWindowData[this.recieveWindowStartSeq];
+                var data = this.receiveWindowData[this.receiveWindowStartSeq];
                 if (this.IsStream == false && maxSize > 0 && maxSize < data.Length)
                 {
                     throw new BufferSizeTooSmallException();
                 }
 
                 buffer = data.Concat(Enumerable.Empty<byte>()).ToArray();
-                bytesReceived = data.Length;
+                currentBytesReceived = data.Length;
                 if (maxSize > 0)
                 {
                     buffer = new byte[maxSize];
+
                     var length = maxSize > data.Length ? data.Length : maxSize;
+
                     Array.Copy(data, buffer, length);
-                    bytesReceived = length;
+
+                    currentBytesReceived = length;
                 }
 
-                if (bytesReceived == data.Length)
+                if (currentBytesReceived == data.Length)
                 {
-                    this.recieveWindowData.TryRemove(this.recieveWindowStartSeq, out _);
-                    this.recieveWindowStartSeq = Session.NextSequenceId(this.recieveWindowStartSeq, 1);
+                    this.receiveWindowData.TryRemove(this.receiveWindowStartSeq, out _);
+                    this.receiveWindowStartSeq = Session.NextSequenceId(this.receiveWindowStartSeq);
                 }
                 else
                 {
-                    var subarray = data.Skip(bytesReceived).ToArray();
-                    if (this.recieveWindowData.ContainsKey(this.recieveWindowStartSeq))
+                    var subarray = data.Skip(currentBytesReceived).ToArray();
+                    if (this.receiveWindowData.ContainsKey(this.receiveWindowStartSeq))
                     {
-                        this.recieveWindowData[this.recieveWindowStartSeq] = subarray;
+                        this.receiveWindowData[this.receiveWindowStartSeq] = subarray;
                     }
                     else
                     {
-                        this.recieveWindowData.TryAdd(this.recieveWindowStartSeq, subarray);
+                        this.receiveWindowData.TryAdd(this.receiveWindowStartSeq, subarray);
                     }
                 }
 
-                this.recieveWindowUsed -= bytesReceived;
-                this.BytesRead += (uint)bytesReceived;
+                this.receiveWindowUsed -= currentBytesReceived;
+                this.TotalBytesRead += (uint)currentBytesReceived;
                 this.bytesReadUpdateTime = DateTime.Now;
 
                 if (this.IsStream)
                 {
-                    while (maxSize < 0 || bytesReceived < maxSize)
+                    while (maxSize < 0 || currentBytesReceived < maxSize)
                     {
-                        if (!this.recieveWindowData.ContainsKey(this.recieveWindowStartSeq))
+                        if (!this.receiveWindowData.ContainsKey(this.receiveWindowStartSeq))
                         {
                             break;
                         }
 
-                        data = this.recieveWindowData[this.recieveWindowStartSeq];
+                        data = this.receiveWindowData[this.receiveWindowStartSeq];
 
-                        int n;
+                        int countOfBytesToRead;
 
                         if (maxSize > 0)
                         {
                             var length = maxSize > data.Length ? data.Length : maxSize;
-                            Array.Copy(data, 0, buffer, bytesReceived, length);
-                            n = length;
+
+                            Array.Copy(data, 0, buffer, currentBytesReceived, length);
+
+                            countOfBytesToRead = length;
                         }
                         else
                         {
                             buffer = buffer.Concat(data).ToArray();
-                            n = data.Length;
+
+                            countOfBytesToRead = data.Length;
                         }
 
-                        if (n == data.Length)
+                        if (countOfBytesToRead == data.Length)
                         {
-                            this.recieveWindowData.TryRemove(this.recieveWindowStartSeq, out _);
-                            this.recieveWindowStartSeq = Session.NextSequenceId(this.recieveWindowStartSeq, 1);
+                            this.receiveWindowData.TryRemove(this.receiveWindowStartSeq, out _);
+                            this.receiveWindowStartSeq = Session.NextSequenceId(this.receiveWindowStartSeq);
                         }
                         else
                         {
-                            this.recieveWindowData.TryAdd(this.recieveWindowStartSeq, data.Skip(n).ToArray());
+                            this.receiveWindowData.TryAdd(this.receiveWindowStartSeq, data.Skip(countOfBytesToRead).ToArray());
                         }
 
-                        this.recieveWindowUsed -= n;
-                        this.BytesRead += (uint)n;
+                        this.receiveWindowUsed -= countOfBytesToRead;
+                        this.TotalBytesRead += (uint)countOfBytesToRead;
                         this.bytesReadUpdateTime = DateTime.Now;
 
-                        bytesReceived += n;
+                        currentBytesReceived += countOfBytesToRead;
                     }
 
                 }
-                return buffer.Take(bytesReceived).ToArray();
+                return buffer.Take(currentBytesReceived).ToArray();
             }
             catch (ContextExpiredException)
             {
@@ -632,7 +615,7 @@ namespace Ncp
 
                         this.sendBuffer = concatenated;
 
-                        this.bytesWrite += bytesToSend;
+                        this.totalBytesWritten += bytesToSend;
                         sentBytesCount += bytesToSend;
 
                         if (shouldFlush)
@@ -648,7 +631,7 @@ namespace Ncp
                     await this.WaitForSendWindowAsync(this.writeContext, data.Length);
 
                     this.sendBuffer = data.ToArray();
-                    this.bytesWrite += (ulong)data.Length;
+                    this.totalBytesWritten += (ulong)data.Length;
                     sentBytesCount += (uint)data.Length;
 
                     await this.FlushSendBufferAsync();
@@ -662,6 +645,101 @@ namespace Ncp
             {
                 throw new SessionClosedException();
             }
+        }
+
+        public async Task CloseAsync()
+        {
+            await this.readContext.CancelAsync();
+            await this.writeContext.CancelAsync();
+
+            var timeout = Channel.CreateBounded<uint?>(1);
+
+            if (this.Options.Linger > 0)
+            {
+                Task.Run(async delegate
+                {
+                    await Task.Delay(this.Options.Linger);
+                    await timeout.CompleteAsync();
+                });
+            }
+
+            if (this.Options.Linger != 0)
+            {
+                try
+                {
+                    await this.FlushSendBufferAsync();
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine(e.Message);
+                }
+
+                await Task.Run(async delegate
+                {
+                    while (true)
+                    {
+                        var interval = 100.ToTimeoutChannel();
+                        var cts = new CancellationTokenSource();
+                        var channelTasks = new List<Task<Channel<uint?>>>
+                        {
+                            interval.Shift(cts.Token),
+                            timeout.Shift(cts.Token)
+                        };
+
+                        var channel = await channelTasks.FirstAsync(cts);
+
+                        if (channel == interval)
+                        {
+                            if (this.sendWindowStartSequenceId == this.sendWindowEndSequenceId)
+                            {
+                                return;
+                            }
+                        }
+                        else if (channel == timeout)
+                        {
+                            return;
+                        }
+                    }
+                });
+            }
+
+            try
+            {
+                await this.SendClosePacketAsync();
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.Message);
+            }
+
+            await this.Context.CancelAsync();
+
+            this.IsClosed = true;
+        }
+
+        private static int CompareSequenceIds(uint sequenceId1, uint sequenceId2)
+        {
+            if (sequenceId1 == sequenceId2)
+            {
+                return 0;
+            }
+
+            if (sequenceId1 < sequenceId2)
+            {
+                if (sequenceId2 - sequenceId1 < uint.MaxValue / 2)
+                {
+                    return -1;
+                }
+
+                return 1;
+            }
+
+            if (sequenceId1 - sequenceId2 < uint.MaxValue / 2)
+            {
+                return 1;
+            }
+
+            return -1;
         }
 
         private void Start()
@@ -679,16 +757,16 @@ namespace Ncp
         {
             while (true)
             {
-                var timeout = this.Config.FlushInterval.ToTimeoutChannel();
+                var timeout = this.Options.FlushInterval.ToTimeoutChannel();
                 var cts = new CancellationTokenSource();
                 var channelTasks = new List<Task<Channel<uint?>>>
                 {
                     timeout.Shift(cts.Token),
-                    this.Context.Done.Shift(cts.Token)
+                    this.Context.DoneChannel.Shift(cts.Token)
                 };
 
                 var channel = await channelTasks.FirstAsync(cts);
-                if (channel == this.Context.Done)
+                if (channel == this.Context.DoneChannel)
                 {
                     throw this.Context.Error;
                 }
@@ -718,45 +796,42 @@ namespace Ncp
         {
             while (true)
             {
-                var timeout = this.Config.CheckBytesReadInterval.ToTimeoutChannel();
+                var timeout = this.Options.CheckBytesReadInterval.ToTimeoutChannel();
                 var cts = new CancellationTokenSource();
                 var channelTasks = new List<Task<Channel<uint?>>>
                 {
                     timeout.Shift(cts.Token),
-                    this.Context.Done.Shift(cts.Token)
+                    this.Context.DoneChannel.Shift(cts.Token)
                 };
 
                 var channel = await channelTasks.FirstAsync(cts);
-                if (channel == this.Context.Done)
+                if (channel == this.Context.DoneChannel)
                 {
                     throw this.Context.Error;
                 }
 
-                if (this.BytesRead == 0
-                    || this.BytesReadSentTime > this.bytesReadUpdateTime
-                    || (DateTime.Now - this.bytesReadUpdateTime).TotalMilliseconds < this.Config.SendBytesReadThreshold)
+                if (this.TotalBytesRead == 0
+                    || this.AckSentTime > this.bytesReadUpdateTime
+                    || (DateTime.Now - this.bytesReadUpdateTime).TotalMilliseconds < this.Options.SendBytesReadThreshold)
                 {
                     continue;
                 }
 
                 try
                 {
-                    var packet = new Packet
-                    {
-                        BytesRead = this.BytesRead
-                    };
-
-                    var buffer = ProtoSerializer.Serialize(packet);
+                    var packet = new Packet { BytesRead = this.TotalBytesRead };
+                    var data = ProtoSerializer.Serialize(packet);
                     var tasks = new Task[this.connections.Count];
                     var i = 0;
                     foreach (var connection in this.connections.Values)
                     {
-                        tasks[i] = Task.Run(async () => await this.SendSessionDataAsync(connection.LocalClientId, connection.RemoteClientId, buffer));
+                        tasks[i] = Task.Run(async () => await this.SendDataAsync(connection.LocalClientId, connection.RemoteClientId, data));
                         i++;
                     }
 
                     await Task.WhenAny(tasks);
-                    this.BytesReadSentTime = DateTime.Now;
+
+                    this.AckSentTime = DateTime.Now;
                 }
                 catch (Exception)
                 {
@@ -777,11 +852,11 @@ namespace Ncp
                 {
                     this.sendWindowUpdateChannel.Shift(cts.Token),
                     timeout.Shift(cts.Token),
-                    context.Done.Shift(cts.Token)
+                    context.DoneChannel.Shift(cts.Token)
                 };
 
                 var channel = await channelTasks.FirstAsync(cts);
-                if (channel == context.Done)
+                if (channel == context.DoneChannel)
                 {
                     throw context.Error;
                 }
@@ -796,25 +871,25 @@ namespace Ncp
         {
             uint sequenceId = 0;
 
-            lock (this)
+            lock (this.syncLock)
             {
                 if (this.sendBuffer == null || this.sendBuffer.Length == 0)
                 {
                     return;
                 }
 
-                sequenceId = this.sendWindowEndSeq;
+                sequenceId = this.sendWindowEndSequenceId;
                 var packet = new Packet
                 {
                     SequenceId = sequenceId,
                     Data = this.sendBuffer
                 };
 
-                var buffer = ProtoSerializer.Serialize(packet);
+                var data = ProtoSerializer.Serialize(packet);
 
-                this.sendWindowData.Add(sequenceId, buffer);
+                this.sendWindowData.Add(sequenceId, data);
 
-                this.sendWindowEndSeq = Session.NextSequenceId(sequenceId, 1);
+                this.sendWindowEndSequenceId = Session.NextSequenceId(sequenceId);
                 this.sendBuffer = new byte[0];
             }
 
@@ -822,11 +897,11 @@ namespace Ncp
             var channelTasks = new List<Task<Channel<uint?>>>
             {
                 this.sendChannel.Push(sequenceId, cts.Token),
-                this.Context.Done.Shift(cts.Token)
+                this.Context.DoneChannel.Shift(cts.Token)
             };
 
             var channel = await channelTasks.FirstAsync(cts);
-            if (channel == this.Context.Done)
+            if (channel == this.Context.DoneChannel)
             {
                 throw this.Context.Error;
             }
@@ -838,7 +913,7 @@ namespace Ncp
             {
                 IsHandshake = true,
                 ClientIds = this.localClientIds.ToList(),
-                WindowSize = this.recieveWindowSize,
+                WindowSize = this.receiveWindowSize,
                 Mtu = this.recieveMtu
             };
 
@@ -850,9 +925,9 @@ namespace Ncp
             {
                 foreach (var connection in this.connections.Values)
                 {
-                    var task = this.SendSessionDataAsync(connection.LocalClientId, connection.RemoteClientId, data);
+                    var sendDataTask = this.SendDataAsync(connection.LocalClientId, connection.RemoteClientId, data);
 
-                    tasks.Add(task.ToTimeoutTask(timeout, new WriteDeadlineExceededException()));
+                    tasks.Add(sendDataTask.ToTimeoutTask(timeout, new WriteDeadlineExceededException()));
                 }
             }
             else
@@ -865,19 +940,23 @@ namespace Ncp
                         remoteClientId = this.remoteClientIds[i % this.remoteClientIds.Count];
                     }
 
-                    var task = this.SendSessionDataAsync(this.localClientIds[i], remoteClientId, data);
+                    var sendDataTask = this.SendDataAsync(this.localClientIds[i], remoteClientId, data);
 
-                    tasks.Add(task.ToTimeoutTask(timeout, new WriteDeadlineExceededException()));
+                    tasks.Add(sendDataTask.ToTimeoutTask(timeout, new WriteDeadlineExceededException()));
                 }
             }
+           
+            await Task.WhenAny(tasks.ToArray());
+        }
 
-            try
+        private ulong GetSendWindowUsed()
+        {
+            if (this.totalBytesWritten > this.remoteBytesRead)
             {
-                await Task.WhenAny(tasks.ToArray());
+                return this.totalBytesWritten - this.remoteBytesRead;
             }
-            catch (Exception e)
-            {
-            }
+
+            return 0;
         }
 
         private void HandleHandshakePacketAsync(Packet packet)
@@ -888,43 +967,42 @@ namespace Ncp
             }
 
             this.ValidateHandshakePacket(packet);
-            this.InitializeConnections(packet);
+            this.InitializeConnections(packet.ClientIds);
 
             this.remoteClientIds = packet.ClientIds;
             this.sendBuffer = new byte[0];
 
             this.sendChannel = Channel.CreateUnbounded<uint?>();
-            this.resendChannel = Channel.CreateBounded<uint?>(this.Config.MaxConnectionWindowSize * this.connections.Count);
+            this.ResendChannel = Channel.CreateBounded<uint?>(this.Options.MaxConnectionWindowSize * this.connections.Count);
             this.sendWindowUpdateChannel = Channel.CreateBounded<uint?>(1);
             this.recieveDataUpdateChannel = Channel.CreateBounded<uint?>(1);
 
             this.sendWindowData = new ConcurrentDictionary<uint, byte[]>();
-            this.recieveWindowData = new ConcurrentDictionary<uint, byte[]>();
+            this.receiveWindowData = new ConcurrentDictionary<uint, byte[]>();
             this.isEstablished = true;
 
             var cts = new CancellationTokenSource();
             var channelTasks = new List<Task<Channel<uint?>>>
             {
                 this.onAcceptChannel.Push(null, cts.Token),
-
                 Constants.ClosedChannel.Shift(cts.Token)
             };
 
-            channelTasks.FirstAsync(cts);
+            Task.Run(() => channelTasks.FirstAsync(cts));
         }
 
-        private void InitializeConnections(Packet packet)
+        private void InitializeConnections(IList<string> remoteClientIds)
         {
             var connectionsCount = this.localClientIds.Count();
-            if (packet.ClientIds.Count < connectionsCount)
+            if (remoteClientIds.Count < connectionsCount)
             {
-                connectionsCount = packet.ClientIds.Count;
+                connectionsCount = remoteClientIds.Count;
             }
 
             IDictionary<string, Connection> connections = new ConcurrentDictionary<string, Connection>();
             for (int i = 0; i < connectionsCount; i++)
             {
-                var connection = new Connection(this, this.localClientIds[i], packet.ClientIds[i]);
+                var connection = new Connection(this, this.localClientIds[i], remoteClientIds[i]);
                 var connectionKey = Connection.GetKey(connection.LocalClientId, connection.RemoteClientId);
 
                 connections.Add(connectionKey, connection);
@@ -968,26 +1046,21 @@ namespace Ncp
                 throw new SessionNotEstablishedException();
             }
 
-            var packet = new Packet { IsClosed = true };
-            var buffer = ProtoSerializer.Serialize(packet);
+            var packet = new Packet { IsClose = true };
+            var data = ProtoSerializer.Serialize(packet);
 
-            var tasks = new Task[this.connections.Count];
+            var sendDataTasks = new Task[this.connections.Count];
             var i = 0;
             foreach (var connection in this.connections.Values)
             {
-                var task = this.SendSessionDataAsync(connection.LocalClientId, connection.RemoteClientId, buffer);
+                var sendDataTask = this.SendDataAsync(connection.LocalClientId, connection.RemoteClientId, data);
 
-                tasks[i] = task.ToTimeoutTask(connection.RetransmissionTimeout, new WriteDeadlineExceededException());
+                sendDataTasks[i] = sendDataTask.ToTimeoutTask(
+                    connection.RetransmissionTimeout, 
+                    new WriteDeadlineExceededException());
             }
 
-            try
-            {
-                await Task.WhenAny(tasks);
-            }
-            catch (Exception e)
-            {
-                throw e;
-            }
+            await Task.WhenAny(sendDataTasks);
         }
 
         private void HandleClosePacket()
@@ -995,76 +1068,6 @@ namespace Ncp
             Task.Run(this.readContext.CancelAsync);
             Task.Run(this.writeContext.CancelAsync);
             Task.Run(this.Context.CancelAsync);
-
-            this.IsClosed = true;
-        }
-
-        public async Task CloseAsync()
-        {
-            await this.readContext.CancelAsync();
-            await this.writeContext.CancelAsync();
-
-            var timeout = Channel.CreateBounded<uint?>(1);
-
-            if (this.Config.Linger > 0)
-            {
-                Task.Run(async delegate
-                {
-                    await Task.Delay(this.Config.Linger);
-                    await timeout.CompleteAsync();
-                });
-            }
-
-            if (this.Config.Linger != 0)
-            {
-                try
-                {
-                    await this.FlushSendBufferAsync();
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine(e.Message);
-                }
-
-                await Task.Run(async delegate
-                {
-                    while (true)
-                    {
-                        var interval = 100.ToTimeoutChannel();
-                        var cts = new CancellationTokenSource();
-                        var channelTasks = new List<Task<Channel<uint?>>>
-                        {
-                            interval.Shift(cts.Token),
-                            timeout.Shift(cts.Token)
-                        };
-
-                        var channel = await channelTasks.FirstAsync(cts);
-
-                        if (channel == interval)
-                        {
-                            if (this.sendWindowStartSeq == this.sendWindowEndSeq)
-                            {
-                                return;
-                            }
-                        }
-                        else if (channel == timeout)
-                        {
-                            return;
-                        }
-                    }
-                });
-            }
-
-            try
-            {
-                await this.SendClosePacketAsync();
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine(e.Message);
-            }
-
-            await this.Context.CancelAsync();
 
             this.IsClosed = true;
         }
@@ -1080,7 +1083,5 @@ namespace Ncp
 
         private void SetReadTimeout(int timeout)
             => this.readContext = Context.WithTimeout(this.Context, timeout);
-
-        public void SetLinger(int linger) => this.Config.Linger = linger;
     }
 }

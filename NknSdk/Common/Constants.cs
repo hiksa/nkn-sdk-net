@@ -1,9 +1,25 @@
 ﻿using System.Text.RegularExpressions;
 
-namespace NknSdk.Client
+namespace NknSdk.Common
 {
     public class Constants
     {
+        public class RpcResponseCodes
+        {
+            public const int Success = 0;
+
+            public const int WrongNode = 48001;
+
+            public const int AppendTxnPool = 45021;
+        }
+
+        public class MessageActions
+        {
+            public const string SetClient = "setClient";
+
+            public const string UpdateSigChainBlockHash = "updateSigChainBlockHash";
+        }
+
         public const string RpcServerAddress = "https://mainnet-rpc-node-0001.nkn.org/mainnet/api/wallet";
 
         public const int MessageIdLength = 8;

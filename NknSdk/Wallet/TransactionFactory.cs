@@ -55,7 +55,12 @@ namespace NknSdk.Wallet
             return TransactionFactory.MakePayload(deleteName, PayloadType.DeleteName);
         }
 
-        public static Payload MakeSubscribePayload(string subscriber, string identifier, string topic, int duration, string meta)
+        public static Payload MakeSubscribePayload(
+            string subscriber,
+            string identifier,
+            string topic,
+            int duration,
+            string meta)
         {
             var subscribe = new Subscribe
             {
@@ -69,7 +74,10 @@ namespace NknSdk.Wallet
             return TransactionFactory.MakePayload(subscribe, PayloadType.Subscribe);
         }
 
-        public static Payload MakeUnsubscribePayload(string subscriber, string identifier, string topic)
+        public static Payload MakeUnsubscribePayload(
+            string subscriber,
+            string identifier,
+            string topic)
         {
             var unsubscribe = new Unsubscribe
             {
@@ -81,7 +89,13 @@ namespace NknSdk.Wallet
             return TransactionFactory.MakePayload(unsubscribe, PayloadType.Unsubscribe);
         }
 
-        public static Payload MakeNanoPayPayload(string sender, string recipient, long id, long amount, int nanoPayExpiration, int transactionExpiration)
+        public static Payload MakeNanoPayPayload(
+            string sender,
+            string recipient,
+            long id,
+            long amount,
+            int nanoPayExpiration,
+            int transactionExpiration)
         {
             var nanoPay = new NanoPay
             {
@@ -96,12 +110,17 @@ namespace NknSdk.Wallet
             return TransactionFactory.MakePayload(nanoPay, PayloadType.NanoPay);
         }
 
-        public static Transaction MakeTransaction(Account account, Payload payload, ulong nonce, long fee = 0, string attributes = "")
+        public static Transaction MakeTransaction(
+            Account account,
+            Payload payload,
+            long nonce,
+            long fee = 0,
+            string attributes = "")
         {
             var unsigned = new UnsignedTransaction
             {
                 Payload = payload,
-                Nonce = nonce,
+                Nonce = (ulong)nonce,
                 Fee =  fee,
                 Attributes = attributes.FromHexString()
             };

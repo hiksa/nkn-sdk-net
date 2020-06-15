@@ -1,6 +1,4 @@
-﻿using NknSdk.Common;
-
-namespace NknSdk.Client
+﻿namespace NknSdk.Common.Options
 {
     public class SendOptions
     {
@@ -8,6 +6,7 @@ namespace NknSdk.Client
         {
             this.IsEncrypted = true;
             this.MessageId = PseudoRandom.RandomBytesAsHexString(Constants.MessageIdLength);
+            this.ResponseTimeout = 5_000;
         }
 
         public int? ResponseTimeout { get; set; }

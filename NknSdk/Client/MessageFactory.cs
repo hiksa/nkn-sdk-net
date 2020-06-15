@@ -34,23 +34,33 @@ namespace NknSdk.Client
         }
 
         public static Payload MakeBinaryPayload(byte[] data, string replyToId, string messageId)
-            => MakePayload(PayloadType.Binary, replyToId, data, messageId);
+        {
+            return MessageFactory.MakePayload(PayloadType.Binary, replyToId, data, messageId);
+        }
 
         public static Payload MakeTextPayload(string text, string replyToId, string messageId)
         {
             var textDataPayload = new TextDataPayload { Text = text };
             var data = ProtoSerializer.Serialize(textDataPayload);
 
-            return MakePayload(PayloadType.Text, replyToId, data, messageId);
+            return MessageFactory.MakePayload(PayloadType.Text, replyToId, data, messageId);
         }
 
         public static Payload MakeAckPayload(string replyToId, string messageId)
-            => MakePayload(PayloadType.Ack, replyToId, null, messageId);
+        {
+            return MessageFactory.MakePayload(PayloadType.Ack, replyToId, null, messageId);
+        }
 
         public static Payload MakeSessionPayload(byte[] data, string sessionId)
-            => MakePayload(PayloadType.Session, null, data, sessionId);
+        {
+            return MessageFactory.MakePayload(PayloadType.Session, null, data, sessionId);
+        }
 
-        public static MessagePayload MakeMessage(byte[] payload, bool encrypted, byte[] nonce = null, byte[] encryptedKey = null)
+        public static MessagePayload MakeMessage(
+            byte[] payload,
+            bool encrypted,
+            byte[] nonce = null,
+            byte[] encryptedKey = null)
         {
             var message = new MessagePayload
             {
@@ -63,7 +73,10 @@ namespace NknSdk.Client
             return message;
         }
 
-        public static ClientMessage MakeClientMessage(ClientMessageType type, byte[] message, CompressionType compressionType)
+        public static ClientMessage MakeClientMessage(
+            ClientMessageType type,
+            byte[] message,
+            CompressionType compressionType)
         {
             var clientMessage = new ClientMessage
             {
@@ -86,7 +99,11 @@ namespace NknSdk.Client
             return clientMessage;
         }
 
-        public static ClientMessage MakeOutboundMessage(Client client, IList<string> destinations, IList<byte[]> payloads, uint maxHoldingSeconds)
+        public static ClientMessage MakeOutboundMessage(
+            Client client,
+            IList<string> destinations,
+            IList<byte[]> payloads,
+            uint maxHoldingSeconds)
         {
             if (destinations == null || destinations.Count() == 0)
             {
@@ -106,7 +123,7 @@ namespace NknSdk.Client
             var signatureChainElement = new SignatureChainElement();
             signatureChainElement.NextPublicKey = client.RemoteNode.Publickey.FromHexString();
 
-            var signatureChainElementSerialized = signatureChainElement.EncodeHex();
+            var signatureChainElementHexEncoded = signatureChainElement.EncodeHex();
 
             var signatureChain = new SignatureChain
             {
@@ -139,7 +156,7 @@ namespace NknSdk.Client
                 var hex = signatureChain.EncodeHex();
 
                 var digest = Hash.Sha256Hex(hex);
-                digest = Hash.Sha256Hex(digest + signatureChainElementSerialized);
+                digest = Hash.Sha256Hex(digest + signatureChainElementHexEncoded);
 
                 var signature = client.Key.Sign(digest.FromHexString());
                 signatures.Add(signature);
@@ -167,10 +184,10 @@ namespace NknSdk.Client
         public static ClientMessage MakeReceipt(CryptoKey key, string previousSignatureHex)
         {
             var signatureChainElement = new SignatureChainElement();
-            var serialized = signatureChainElement.EncodeHex();
+            var signatureChainElementHexEncoded = signatureChainElement.EncodeHex();
 
             var digest = Hash.Sha256Hex(previousSignatureHex);
-            digest = Hash.Sha256Hex(digest + serialized);
+            digest = Hash.Sha256Hex(digest + signatureChainElementHexEncoded);
 
             var signature = key.Sign(digest.FromHexString());
 

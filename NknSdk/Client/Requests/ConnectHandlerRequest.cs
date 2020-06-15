@@ -1,4 +1,4 @@
-﻿namespace NknSdk.Client.Network
+﻿namespace NknSdk.Client.Requests
 {
     public class ConnectHandlerRequest
     {

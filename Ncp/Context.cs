@@ -17,17 +17,17 @@ namespace Ncp
 
         private Context(Context parent = null, bool cancel = false, int timeout = 0)
         {
-            this.Done = Channel.CreateBounded<uint?>(1);
+            this.DoneChannel = Channel.CreateBounded<uint?>(1);
 
-            Channel<uint?> parentChan = null;
-            Channel<uint?> timeoutChan = null;
+            Channel<uint?> parentChannel = null;
+            Channel<uint?> timeoutChannel = null;
             var tasks = new List<Task<Channel<uint?>>>();
             var cts = new CancellationTokenSource();
 
             if (parent != null)
             {
-                parentChan = parent.Done;
-                tasks.Add(parentChan.Shift(cts.Token));
+                parentChannel = parent.DoneChannel;
+                tasks.Add(parentChannel.Shift(cts.Token));
             }
 
             if (cancel)
@@ -38,9 +38,14 @@ namespace Ncp
 
             if (timeout > 0)
             {
-                timeoutChan = timeout.ToTimeoutChannel();
-                tasks.Add(timeoutChan.Shift(cts.Token));
-                this.timeoutTimer = new Timer((state) => timeoutChan.Writer.Complete(), new object { }, timeout, Timeout.Infinite);
+                timeoutChannel = timeout.ToTimeoutChannel();
+                tasks.Add(timeoutChannel.Shift(cts.Token));
+
+                this.timeoutTimer = new Timer(
+                    (state) => timeoutChannel.Writer.Complete(), 
+                    null, 
+                    timeout, 
+                    Timeout.Infinite);
             }
 
             if (tasks.Count > 0)
@@ -50,7 +55,7 @@ namespace Ncp
                     .ContinueWith(async task =>
                     {
                         var channel = await task;
-                        if (channel == parentChan)
+                        if (channel == parentChannel)
                         {
                             this.Error = parent.Error;
                         }
@@ -58,20 +63,20 @@ namespace Ncp
                         {
                             this.Error = new ContextCanceledException();
                         }
-                        else if (channel == timeoutChan)
+                        else if (channel == timeoutChannel)
                         {
                             this.Error = new ContextExpiredException();
                         }
 
-                        await this.Done.CompleteAsync();
+                        await this.DoneChannel.CompleteAsync();
                         await this.CancelAsync();
 
-                        this.timeoutTimer.Dispose();
+                        this.timeoutTimer?.Dispose();
                     });
             }
         }
 
-        public Channel<uint?> Done { get; }
+        public Channel<uint?> DoneChannel { get; }
 
         public Exception Error { get; private set; }
 

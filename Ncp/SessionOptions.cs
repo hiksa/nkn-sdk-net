@@ -1,8 +1,8 @@
 ﻿namespace Ncp
 {
-    public class SessionConfiguration
+    public class SessionOptions
     {
-        public SessionConfiguration()
+        public SessionOptions()
         {
             this.CheckBytesReadInterval = Constants.DefaultCheckBytesReadInterval;
             this.CheckTimeoutInterval = Constants.DefaultCheckTimeoutInterval;
@@ -51,25 +51,25 @@
 
         public bool NonStream { get; set; }
 
-        public SessionConfiguration WithMtu(int mtu)
+        public SessionOptions WithMtu(int mtu)
         {
             this.Mtu = mtu;
             return this;
         }
 
-        public SessionConfiguration WithInitialConnectionWindowSize(int size)
+        public SessionOptions WithInitialConnectionWindowSize(int size)
         {
             this.InitialConnectionWindowSize = size;
             return this;
         }
 
-        public SessionConfiguration WithMinConnectionWindowSize(int size)
+        public SessionOptions WithMinConnectionWindowSize(int size)
         {
             this.MinConnectionWindowSize = size;
             return this;
         }
 
-        public SessionConfiguration WithMaxAckSeqListSize(int size)
+        public SessionOptions WithMaxAckSeqListSize(int size)
         {
             this.MaxAckSeqListSize = size;
             return this;

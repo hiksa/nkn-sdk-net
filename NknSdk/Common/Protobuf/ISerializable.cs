@@ -8,16 +8,12 @@
     {
         public static T FromBytes<T>(this byte[] data) where T : class, ISerializable
         {
-            var result = ProtoSerializer.Deserialize<T>(data);
-
-            return result;
+            return ProtoSerializer.Deserialize<T>(data);
         }
 
         public static byte[] ToBytes<T>(this T instance) where T : class, ISerializable
         {
-            var result = ProtoSerializer.Serialize(instance);
-
-            return result;
+            return ProtoSerializer.Serialize(instance);
         }
     }
 }

@@ -34,7 +34,7 @@ namespace Ncp.Protobuf
         public uint Mtu { get; set; }
 
         [ProtoMember(9)]
-        public bool IsClosed { get; set; }
+        public bool IsClose { get; set; }
 
         [ProtoMember(10)]
         public bool IsHandshake { get; set; }

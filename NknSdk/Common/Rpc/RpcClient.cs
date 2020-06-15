@@ -11,6 +11,7 @@ using NknSdk.Common.Protobuf.Transaction;
 using NknSdk.Common.Rpc.Results;
 using NknSdk.Common.Exceptions;
 using NknSdk.Common.Extensions;
+using NknSdk.Common.Options;
 using NknSdk.Wallet;
 using NknSdk.Wallet.Models;
 
@@ -28,12 +29,14 @@ namespace NknSdk.Common.Rpc
         public static async Task<GetWsAddressResult> GetWsAddress(string nodeUri, string address)
         {
             address.ThrowIfNullOrEmpty("remoteAddress is empty");
+
             return await CallRpc<GetWsAddressResult>(nodeUri, "getwsaddr", new { address });
         }
 
         public static async Task<GetWsAddressResult> GetWssAddress(string nodeUri, string address)
         {
             address.ThrowIfNullOrEmpty("remoteAddress is empty");
+
             return await CallRpc<GetWsAddressResult>(nodeUri, "getwssaddr", new { address });
         }
 
@@ -141,79 +144,103 @@ namespace NknSdk.Common.Rpc
             return await CallRpc<string>(nodeUri, "sendrawtransaction", parameters);
         }
 
-        public static async Task<string> TransferTo(string toAddress, Amount amount, Wallet.Wallet wallet, WalletOptions options)
+        public static async Task<string> TransferTo(
+            string toAddress, 
+            Amount amount, 
+            ITransactionSender transactionSender, 
+            WalletOptions options)
         {
             if (Address.IsValid(toAddress) == false)
             {
                 throw new Exception();
             }
 
-            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();
+            var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();
             
-            var signatureRedeem = Address.PublicKeyToSignatureRedeem(wallet.PublicKey);
+            var signatureRedeem = Address.PublicKeyToSignatureRedeem(transactionSender.PublicKey);
             
             var programHash = Address.HexStringToProgramHash(signatureRedeem);
             
             var payload = TransactionFactory.MakeTransferPayload(programHash, Address.ToProgramHash(toAddress), amount.Value);
             
-            var tx = wallet.CreateTransaction(payload, nonce, options);
+            var tx = transactionSender.CreateTransaction(payload, nonce, options);
 
-            return await wallet.SendTransactionAsync(tx);
+            return await transactionSender.SendTransactionAsync(tx);
         }
 
-        public static async Task<string> RegisterName(string name, Wallet.Wallet wallet, WalletOptions options)
+        public static async Task<string> RegisterName(
+            string name, 
+            ITransactionSender transactionSender, 
+            WalletOptions options)
         {
-            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();            
-            var payload = TransactionFactory.MakeRegisterNamePayload(wallet.PublicKey, name, options.Fee.GetValueOrDefault());            
-            var tx = wallet.CreateTransaction(payload, nonce, options);
+            var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();            
+            
+            var payload = TransactionFactory.MakeRegisterNamePayload(transactionSender.PublicKey, name, options.Fee.GetValueOrDefault());            
+            
+            var tx = transactionSender.CreateTransaction(payload, nonce, options);
 
-            return await wallet.SendTransactionAsync(tx);
+            return await transactionSender.SendTransactionAsync(tx);
         }
 
-        public static async Task<string> TransferName(string name, string recipient, Wallet.Wallet wallet, WalletOptions options)
+        public static async Task<string> TransferName(
+            string name, 
+            string recipient, 
+            ITransactionSender transactionSender, 
+            WalletOptions options)
         {
-            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();            
-            var payload = TransactionFactory.MakeTransferNamePayload(name, wallet.PublicKey, recipient);            
-            var tx = wallet.CreateTransaction(payload, nonce, options);
+            var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();            
+            
+            var payload = TransactionFactory.MakeTransferNamePayload(name, transactionSender.PublicKey, recipient);            
+            
+            var tx = transactionSender.CreateTransaction(payload, nonce, options);
 
-            return await wallet.SendTransactionAsync(tx);
+            return await transactionSender.SendTransactionAsync(tx);
         }
 
-        public static async Task<string> DeleteName(string name, Wallet.Wallet wallet, WalletOptions options)
+        public static async Task<string> DeleteName(
+            string name, 
+            ITransactionSender transactionSender, 
+            WalletOptions options)
         {
-            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();
-            var payload = TransactionFactory.MakeDeleteNamePayload(wallet.PublicKey, name);
-            var tx = wallet.CreateTransaction(payload, nonce, options);
+            var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();
+            
+            var payload = TransactionFactory.MakeDeleteNamePayload(transactionSender.PublicKey, name);
+            
+            var tx = transactionSender.CreateTransaction(payload, nonce, options);
 
-            return await wallet.SendTransactionAsync(tx);
+            return await transactionSender.SendTransactionAsync(tx);
         }
 
         public static async Task<string> Subscribe(
             string topic, 
             int duration, 
             string identifier, 
-            string meta, 
-            Wallet.Wallet wallet, 
+            string meta,
+            ITransactionSender txSender, 
             WalletOptions options)
         {
-            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();
-            var payload = TransactionFactory.MakeSubscribePayload(wallet.PublicKey, identifier, topic, duration, meta);
-            var tx = wallet.CreateTransaction(payload, nonce, options);
+            var nonce = options.Nonce ?? (await txSender.GetNonceAsync()).Nonce.GetValueOrDefault();
+            
+            var payload = TransactionFactory.MakeSubscribePayload(txSender.PublicKey, identifier, topic, duration, meta);
+            
+            var tx = txSender.CreateTransaction(payload, nonce, options);
 
-            return await wallet.SendTransactionAsync(tx);
+            return await txSender.SendTransactionAsync(tx);
         }
 
         public static async Task<string> Unsubscribe(
             string topic,
             string identifier,
-            Wallet.Wallet wallet,
+            ITransactionSender transactionSender,
             WalletOptions options)
         {
-            var nonce = options.Nonce ?? (await wallet.GetNonceAsync()).Nonce.GetValueOrDefault();
-            var payload = TransactionFactory.MakeUnsubscribePayload(wallet.PublicKey, topic, identifier);
-            var tx = wallet.CreateTransaction(payload, nonce, options);
+            var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();
+            
+            var payload = TransactionFactory.MakeUnsubscribePayload(transactionSender.PublicKey, topic, identifier);
+            
+            var tx = transactionSender.CreateTransaction(payload, nonce, options);
 
-            return await wallet.SendTransactionAsync(tx);
+            return await transactionSender.SendTransactionAsync(tx);
         }
 
         private static async Task<T> CallRpc<T>(string nodeUri, string method, object parameters = null)
@@ -239,22 +266,18 @@ namespace NknSdk.Common.Rpc
             var requestContent = new ByteArrayContent(data);
 
             var response = await httpClient.PostAsync(nodeUri, requestContent);
-
             if (response.IsSuccessStatusCode == false)
             {
                 throw new ServerException($"Unsuccessful Rpc call. Node uri: {nodeUri} | Method: {method}");
             }
 
             var responseContent = await response.Content.ReadAsStringAsync();
-
             if (string.IsNullOrWhiteSpace(responseContent))
             {
                 throw new ServerException("rpc response is empty");
             }
 
-            //var rpcResponse = JsonSerializer.Deserialize<RpcResponse<T>>(responseContent, StandardResolver.CamelCase);
-            var rpcResponse = Newtonsoft.Json.JsonConvert.DeserializeObject<RpcResponse<T>>(responseContent);
-
+            var rpcResponse = JsonSerializer.Deserialize<RpcResponse<T>>(responseContent, StandardResolver.CamelCase);
             if (rpcResponse.IsSuccess == false)
             {
                 throw new ServerException(rpcResponse.Error.Data);

@@ -5,15 +5,16 @@ using Utf8Json;
 
 using NknSdk.Common;
 using NknSdk.Common.Protobuf.Transaction;
-using NknSdk.Common.Rpc;
 using NknSdk.Common.Exceptions;
-using NknSdk.Common.Rpc.Results;
 using NknSdk.Common.Extensions;
+using NknSdk.Common.Options;
+using NknSdk.Common.Rpc;
+using NknSdk.Common.Rpc.Results;
 using NknSdk.Wallet.Models;
 
 namespace NknSdk.Wallet
 {
-    public class Wallet
+    public class Wallet : ITransactionSender
     {
         public const int NameRegistrationFee = 10;
         public const int DefaultVersion = 1;
@@ -21,16 +22,17 @@ namespace NknSdk.Wallet
         public const int MaxCompatibleVersion = 2;
 
         private readonly int version;
-        private readonly string address;
         private readonly string programHash;
-        private readonly string iv;
+        private readonly string ivHex;
         private readonly string masterKey;
         private readonly string seedEncrypted;
         private readonly ScryptParams scryptParams;
         private readonly Account account;
 
-        public Wallet(WalletOptions options)
+        public Wallet(WalletOptions options = null)
         {
+            options ??= new WalletOptions();
+
             this.version = options.Version ?? Wallet.DefaultVersion;
 
             switch (this.version)
@@ -60,19 +62,26 @@ namespace NknSdk.Wallet
 
             var account = new Account(options.SeedHex);
 
-            var iv = options.Iv ?? PseudoRandom.RandomBytesAsHexString(16);
+            var ivHex = options.Iv ?? PseudoRandom.RandomBytesAsHexString(16);
             var masterKeyHex = string.IsNullOrWhiteSpace(options.MasterKey) 
                 ? PseudoRandom.RandomBytesAsHexString(16) 
                 : options.MasterKey;
 
             this.Options = options;
             this.account = account;
-            this.iv = iv;
-            this.address = this.account.Address;
+            this.ivHex = ivHex;
+            this.Address = this.account.Address;
             this.programHash = this.account.ProgramHash;
 
-            this.masterKey = Aes.Encrypt(masterKeyHex, passwordKey, iv.FromHexString());
-            this.seedEncrypted = Aes.Encrypt(options.SeedHex, masterKeyHex, iv.FromHexString());
+            this.masterKey = Aes.Encrypt(masterKeyHex, passwordKey, ivHex.FromHexString());
+            this.seedEncrypted = Aes.Encrypt(options.SeedHex, masterKeyHex, ivHex.FromHexString());
+            
+            this.Options.Iv = null;
+            this.Options.SeedHex = null;
+            this.Options.Password = null;
+            this.Options.MasterKey = null;
+            this.Options.PasswordKey = null;
+            this.Options.PasswordKeys.Clear();
         }
 
         public string Seed => this.account.Seed;
@@ -80,6 +89,8 @@ namespace NknSdk.Wallet
         public string PublicKey => this.account.PublicKey;
 
         public WalletOptions Options { get; }
+
+        public string Address { get; }
 
         public static Wallet Decrypt(WalletJson wallet, WalletOptions options)
         {
@@ -117,7 +128,9 @@ namespace NknSdk.Wallet
 
         public static async Task<Wallet> FromJsonAsync(string json, WalletOptions options = null)
         {
-            var wallet = ParseAndValidateWalletJson(json);
+            var wallet = WalletJson.FromJson(json);
+
+            options = WalletOptions.FromWalletJson(wallet);
 
             var computeOptions = WalletOptions.FromWalletJson(wallet);
             computeOptions.Password = options.Password;
@@ -130,9 +143,8 @@ namespace NknSdk.Wallet
 
         public static Wallet FromJson(string json, WalletOptions options = null)
         {
-            var wallet = ParseAndValidateWalletJson(json);
+            var wallet = WalletJson.FromJson(json);
 
-            // TODO: ....
             options = WalletOptions.FromWalletJson(wallet);
 
             var computeOptions = WalletOptions.FromWalletJson(wallet);
@@ -144,64 +156,74 @@ namespace NknSdk.Wallet
             return Wallet.Decrypt(wallet, options);
         }
 
-        public static async Task<GetLatestBlockHashResult> GetLatestBlock(WalletOptions options = null)
+        public static async Task<GetLatestBlockHashResult> GetLatestBlockAsync(WalletOptions options = null)
         {
-            return await RpcClient.GetLatestBlockHash(options.RpcServer);
+            options ??= new WalletOptions();
+            return await RpcClient.GetLatestBlockHash(options.RpcServerAddress);
         }
 
         public static async Task<GetRegistrantResult> GetRegistrantAsync(string name, WalletOptions options = null)
         {
-            return await RpcClient.GetRegistrant(options.RpcServer, name);
+            options ??= new WalletOptions();
+            return await RpcClient.GetRegistrant(options.RpcServerAddress, name);
         }
 
         public static Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadata(
             string topic,
-            WalletOptions options = null,
-            int offset = 0,
-            int limit = 1000,
-            bool txPool = false)
+            WalletOptions options = null)
         {
-            return RpcClient.GetSubscribersWithMetadata(options.RpcServer, topic, offset, limit, txPool);
+            options ??= new WalletOptions();
+            return RpcClient.GetSubscribersWithMetadata(options.RpcServerAddress, topic, options.Offset, options.Limit, options.TxPool);
         }
 
         public static Task<GetSubscribersResult> GetSubscribers(
             string topic,
-            WalletOptions options = null,
-            int offset = 0,
-            int limit = 1000,
-            bool txPool = false)
+            WalletOptions options = null)
         {
-            return RpcClient.GetSubscribers(options.RpcServer, topic, offset, limit, txPool);
+            options ??= new WalletOptions();
+            return RpcClient.GetSubscribers(options.RpcServerAddress, topic, options.Offset, options.Limit, options.TxPool);
         }
 
         public static Task<int> GetSubscribersCount(string topic, WalletOptions options = null)
         {
-            return RpcClient.GetSubscribersCount(options.RpcServer, topic);
+            options ??= new WalletOptions();
+            return RpcClient.GetSubscribersCount(options.RpcServerAddress, topic);
         }
 
-        public static Task<GetSubscriptionResult> GetSubscription(string topic, string subscriber, WalletOptions options = null)
+        public static Task<GetSubscriptionResult> GetSubscription(
+            string topic, 
+            string subscriber, 
+            WalletOptions options = null)
         {
-            return RpcClient.GetSubscription(options.RpcServer, topic, subscriber);
+            options ??= new WalletOptions();
+            return RpcClient.GetSubscription(options.RpcServerAddress, topic, subscriber);
         }
 
         public static Task<GetBalanceResult> GetBalance(string address, WalletOptions options = null)
         {
-            return RpcClient.GetBalanceByAddress(options.RpcServer, address);
+            options ??= new WalletOptions();
+            return RpcClient.GetBalanceByAddress(options.RpcServerAddress, address);
         }
 
         public static Task<GetNonceByAddrResult> GetNonce(string address, WalletOptions options = null)
-            => RpcClient.GetNonceByAddress(options.RpcServer, address);
+        {
+            options ??= new WalletOptions();
+            return RpcClient.GetNonceByAddress(options.RpcServerAddress, address);
+        }
 
         public static Task<string> SendTransaction(Transaction tx, WalletOptions options = null)
-            => RpcClient.SendRawTransaction(options.RpcServer, tx);
+        {
+            options ??= new WalletOptions();
+            return RpcClient.SendRawTransaction(options.RpcServerAddress, tx);
+        }
 
-        public static bool AddressIsValid(string address) => Address.IsValid(address);
+        public static bool AddressIsValid(string address) => Common.Address.IsValid(address);
 
         public static string PublicKeyToAddress(string publicKey)
         {
-            var signatureRedeem = Address.PublicKeyToSignatureRedeem(publicKey);
-            var programHash = Address.HexStringToProgramHash(signatureRedeem);
-            var result = Address.FromProgramHash(programHash);
+            var signatureRedeem = Common.Address.PublicKeyToSignatureRedeem(publicKey);
+            var programHash = Common.Address.HexStringToProgramHash(signatureRedeem);
+            var result = Common.Address.FromProgramHash(programHash);
 
             return result;
         }
@@ -212,9 +234,9 @@ namespace NknSdk.Wallet
             {
                 Version = this.version,
                 MasterKey = this.masterKey,
-                Iv = this.iv,
+                Iv = this.ivHex,
                 SeedEncrypted = this.seedEncrypted,
-                Address = this.address,
+                Address = this.Address,
             };
 
             if (this.scryptParams != null)
@@ -261,38 +283,37 @@ namespace NknSdk.Wallet
             return this.VerifyPasswordKey(passwordKey);
         }
 
-        public Task<GetLatestBlockHashResult> GetLatestBlock() => Wallet.GetLatestBlock(this.Options);
+        public Task<GetLatestBlockHashResult> GetLatestBlock() => Wallet.GetLatestBlockAsync(this.Options);
 
         public Task<GetRegistrantResult> GetRegistrantAsync(string name) => Wallet.GetRegistrantAsync(name, this.Options);
 
-        public Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadata(
-            string topic,
-            int offset = 0,
-            int limit = 1000,
-            bool txPool = false)
+        public Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadata(string topic)
         {
-            return Wallet.GetSubscribersWithMetadata(topic, this.Options, offset, limit, txPool);
+            return Wallet.GetSubscribersWithMetadata(topic, this.Options);
         }
 
-        public Task<GetSubscribersResult> GetSubscribers(
-            string topic,
-            int offset = 0,
-            int limit = 1000,
-            bool txPool = false)
+        public Task<GetSubscribersResult> GetSubscribers(string topic)
         {
-            return Wallet.GetSubscribers(topic, this.Options, offset, limit, txPool);
+            return Wallet.GetSubscribers(topic, this.Options);
         }
 
         public Task<int> GetSubscribersCount(string topic) => Wallet.GetSubscribersCount(topic, this.Options);
 
         public Task<GetSubscriptionResult> GetSubscription(string topic, string subscriber)
-            => RpcClient.GetSubscription(this.Options.RpcServer, topic, subscriber);
+            => RpcClient.GetSubscription(this.Options.RpcServerAddress, topic, subscriber);
+
+        public Task<GetBalanceResult> GetBalance(string address = "")
+        {
+            var addr = string.IsNullOrEmpty(address) ? this.Address : address;
+
+            return Wallet.GetBalance(addr, this.Options);
+        }
 
         public Task<GetNonceByAddrResult> GetNonceAsync() => Wallet.GetNonce(this.account.Address, this.Options);     
 
         public Task<string> SendTransactionAsync(Transaction tx) => Wallet.SendTransaction(tx, this.Options);
 
-        public Task<string> TransferTo(string toAddress, decimal amount, WalletOptions options)
+        public Task<string> TransferToAddressAsync(string toAddress, decimal amount, WalletOptions options)
             => RpcClient.TransferTo(toAddress, new Amount(amount), this, options);
 
         public Task<string> RegisterName(string name, WalletOptions options) 
@@ -312,7 +333,7 @@ namespace NknSdk.Wallet
 
         public Transaction CreateOrUpdateNanoPay(string toAddress, decimal amount, int expiration, long? id, WalletOptions options)
         {
-            if (Address.IsValid(toAddress) == false)
+            if (Common.Address.IsValid(toAddress) == false)
             {
                 throw new System.Exception();
             }
@@ -321,7 +342,7 @@ namespace NknSdk.Wallet
 
             var payload = TransactionFactory.MakeNanoPayPayload(
                 this.programHash,
-                Address.ToProgramHash(toAddress),
+                Common.Address.ToProgramHash(toAddress),
                 id.Value,
                 new Amount(amount).Value,
                 expiration,
@@ -330,7 +351,7 @@ namespace NknSdk.Wallet
             return this.CreateTransaction(payload, 0, options);
         }
 
-        public Transaction CreateTransaction(Payload payload, ulong nonce, WalletOptions options)
+        public Transaction CreateTransaction(Payload payload, long nonce, WalletOptions options)
             => TransactionFactory.MakeTransaction(
                 this.account, 
                 payload, 
@@ -399,48 +420,12 @@ namespace NknSdk.Wallet
 
         private bool VerifyPasswordKey(string passwordKey)
         {
-            var masterKey = Aes.Decrypt(this.masterKey, passwordKey, this.iv.FromHexString());
-            var seed = Aes.Decrypt(this.seedEncrypted, masterKey, this.iv.FromHexString());
+            var masterKey = Aes.Decrypt(this.masterKey, passwordKey, this.ivHex.FromHexString());
+            var seed = Aes.Decrypt(this.seedEncrypted, masterKey, this.ivHex.FromHexString());
 
             var account = new Account(seed);
 
-            return account.Address == this.address;
-        }
-
-        private static WalletJson ParseAndValidateWalletJson(string json)
-        {
-            var wallet = JsonSerializer.Deserialize<WalletJson>(json);
-
-            if (wallet.Version == null 
-                || wallet.Version < Wallet.MinCompatibleVersion 
-                || wallet.Version > Wallet.MaxCompatibleVersion)
-            {
-                throw new InvalidWalletVersionException(
-                    $"Invalid wallet version {wallet.Version}. " +
-                    $"Should be between {Wallet.MinCompatibleVersion} and {Wallet.MaxCompatibleVersion}");
-            }
-
-            if (string.IsNullOrWhiteSpace(wallet.MasterKey))
-            {
-                throw new InvalidWalletFormatException("Missing MasterKey property");
-            }
-
-            if (string.IsNullOrWhiteSpace(wallet.Iv))
-            {
-                throw new InvalidWalletFormatException("Missing Iv property");
-            }
-
-            if (string.IsNullOrWhiteSpace(wallet.SeedEncrypted))
-            {
-                throw new InvalidWalletFormatException("Missing SeedEncrypted property");
-            }
-
-            if (string.IsNullOrWhiteSpace(wallet.Address))
-            {
-                throw new InvalidWalletFormatException("Missing Address property");
-            }
-
-            return wallet;
+            return account.Address == this.Address;
         }
     }
 }

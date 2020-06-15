@@ -11,7 +11,10 @@ namespace NknSdk.Common.Extensions
     public static class InfrastructureExtensions
     {
         public static string ToHexString(this byte[] bytes)
-            => BitConverter.ToString(bytes).Replace("-", "").ToLower();
+            => BitConverter
+                .ToString(bytes)
+                .Replace("-", "")
+                .ToLower();
         
         public static byte[] FromHexString(this string hex)
             => Enumerable
@@ -27,7 +30,9 @@ namespace NknSdk.Common.Extensions
             using (var inMemoryStream = new MemoryStream(data))
             {
                 CopyStream(inMemoryStream, outZStream);
+
                 outZStream.finish();
+
                 return outMemoryStream.ToArray();
             }
         }
@@ -39,7 +44,9 @@ namespace NknSdk.Common.Extensions
             using (var inMemoryStream = new MemoryStream(gzip))
             {
                 CopyStream(inMemoryStream, outZStream);
+
                 outZStream.finish();
+
                 return outMemoryStream.ToArray();
             }
         }

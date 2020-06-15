@@ -1,6 +1,6 @@
 ﻿using System.Runtime.Serialization;
 
-namespace NknSdk.Client.Network
+namespace NknSdk.Client.Messages
 {
     public class Message
     {

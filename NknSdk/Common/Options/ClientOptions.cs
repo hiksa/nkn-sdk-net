@@ -1,4 +1,4 @@
-﻿namespace NknSdk.Client
+﻿namespace NknSdk.Common.Options
 {
     public class ClientOptions
     {
@@ -13,7 +13,7 @@
             this.UseTls = true;
         }
 
-        public string Seed { get; set; }
+        public string SeedHex { get; set; }
 
         public string Identifier { get; set; }
 

@@ -27,7 +27,6 @@ namespace NknSdk.Common
         public static byte[] DecryptSymmetric(byte[] message, byte[] nonce, byte[] sharedKey)
         {
             return Sodium.SecretBox.Open(message, nonce, sharedKey);
-          //  var test2 = XSalsa20Poly1305.TryDecrypt(message, sharedKey, nonce);
         }
 
         public static string Sha256(byte[] input)
@@ -47,9 +46,9 @@ namespace NknSdk.Common
             return Hash.Sha256(inputBytes);
         }
 
-        public static string Sha256Hex(string hexString)
+        public static string Sha256Hex(string inputHex)
         {
-            var inputBytes = hexString.FromHexString();
+            var inputBytes = inputHex.FromHexString();
 
             return Hash.Sha256(inputBytes);
         }
@@ -73,18 +72,18 @@ namespace NknSdk.Common
             return Hash.DoubleSha256(inputBytes);
         }
 
-        public static string Ripemd160(string text)
+        public static byte[] Ripemd160(string input)
         {
             var hash = HashFactory.Crypto.CreateRIPEMD160();
 
-            var result = hash.ComputeString(text);
+            var result = hash.ComputeString(input);
 
-            return result.GetBytes().ToHexString();
+            return result.GetBytes();
         }
 
-        public static byte[] Ripemd160Hex(string hex)
+        public static byte[] Ripemd160Hex(string inputHex)
         {
-            var bytes = hex.FromHexString();
+            var bytes = inputHex.FromHexString();
 
             var hash = HashFactory.Crypto.CreateRIPEMD160();
 

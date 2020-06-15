@@ -3,23 +3,23 @@ using System.Threading.Channels;
 
 using NknSdk.Common.Extensions;
 
-namespace NknSdk.Client.Network
+namespace NknSdk.Client
 {
-    public class ClientResponseProcessor<T>
+    public class ResponseProcessor<T>
     {
         private readonly DateTime? deadline;
-
         private readonly Channel<T> responseChannel;
         private readonly Channel<T> timeoutChannel;
 
-        public ClientResponseProcessor(
+        public ResponseProcessor(
             byte[] messageId,
             int? timeout,
             Channel<T> responseChannel,
             Channel<T> timeoutChannel)
-            : this(messageId.ToHexString(), timeout, responseChannel, timeoutChannel) { }
+            : this(messageId.ToHexString(), timeout, responseChannel, timeoutChannel) 
+        { }
 
-        public ClientResponseProcessor(
+        public ResponseProcessor(
             string messageId, 
             int? timeout,
             Channel<T> responseChannel,
@@ -53,16 +53,16 @@ namespace NknSdk.Client.Network
             return currentTime > this.deadline;
         }
 
-        public void HandleResponse(object data)
+        public void HandleResponse(object responseData)
         {
-            this.responseChannel.Writer.WriteAsync((T)data);
-            this.responseChannel.Writer.Complete();
+            this.responseChannel.Writer.TryWrite((T)responseData);
+            this.responseChannel.Writer.TryComplete();
         }
 
         public void HandleTimeout()
         {
-            this.timeoutChannel.Writer.WriteAsync(default);
-            this.timeoutChannel.Writer.Complete();
+            this.timeoutChannel.Writer.TryWrite(default);
+            this.timeoutChannel.Writer.TryComplete();
         }
     }
 }

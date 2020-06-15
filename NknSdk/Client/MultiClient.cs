@@ -1,35 +1,40 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
+using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Channels;
+using System.Threading.Tasks;
 using System.Linq;
 using System.Runtime.Caching;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 
 using Ncp;
 using Ncp.Exceptions;
 
+using NknSdk.Client.Requests;
 using NknSdk.Common;
-using NknSdk.Common.Protobuf.Payloads;
 using NknSdk.Common.Exceptions;
 using NknSdk.Common.Extensions;
-using NknSdk.Client.Network;
+using NknSdk.Wallet.Models;
+using NknSdk.Common.Options;
+using NknSdk.Common.Protobuf.Transaction;
+using NknSdk.Common.Rpc;
+using NknSdk.Common.Rpc.Results;
 
-using static NknSdk.Client.Network.Handlers;
+using Constants = NknSdk.Common.Constants;
 
 namespace NknSdk.Client
 {
-    public class MultiClient
+    public class MultiClient : ITransactionSender
     {
+        private readonly object syncLock = new object();
         private readonly IDictionary<string, Session> sessions;
         private readonly MultiClientOptions options;
         private readonly CryptoKey key;
-        private readonly string identifier;
-        private readonly string address;
 
         private bool isReady;
         private bool isClosed;
+        private string identifier;
         private Client defaultClient;
         private MemoryCache messageCache;
         private IEnumerable<Regex> acceptedAddresses;
@@ -37,19 +42,19 @@ namespace NknSdk.Client
         private IList<Func<Session, Task>> sessionHandlers = new List<Func<Session, Task>>();
         private IList<Func<MessageHandlerRequest, Task<object>>> messageHandlers = new List<Func<MessageHandlerRequest, Task<object>>>();
 
-        public MultiClient(MultiClientOptions options)
+        public MultiClient(MultiClientOptions options = null)
         {
-            var baseIdentifier = options.Identifier ?? "";
-            options.Identifier = baseIdentifier;
+            options ??= new MultiClientOptions();
+
+            options.Identifier ??= "";
 
             this.options = options;
 
             this.InitializeClients();
-            
+
             this.key = this.defaultClient.Key;
-            this.identifier = baseIdentifier;
-            this.address = (string.IsNullOrWhiteSpace(baseIdentifier) ? "" : baseIdentifier + ".") + this.key.PublicKey;
-            
+            this.Address = (string.IsNullOrWhiteSpace(options.Identifier) ? "" : options.Identifier + ".") + this.key.PublicKey;
+
             this.messageHandlers = new List<Func<MessageHandlerRequest, Task<object>>>();
             this.sessionHandlers = new List<Func<Session, Task>>();
             this.acceptedAddresses = new List<Regex>();
@@ -60,6 +65,10 @@ namespace NknSdk.Client
             this.isClosed = false;
         }
 
+        public string PublicKey => this.key.PublicKey;
+
+        public string Address { get; }
+
         public void OnMessage(Func<MessageHandlerRequest, Task<object>> func) => this.messageHandlers.Add(func);
 
         /// <summary>
@@ -68,15 +77,15 @@ namespace NknSdk.Client
         /// <param name="func">The callback to be executed</param>
         public void OnSession(Func<Session, Task> func) => this.sessionHandlers.Add(func);
 
-        public void OnConnect(ConnectHandler func)
+        public void OnConnect(Action<ConnectHandlerRequest> func)
         {
-            var tasks = this.clients.Keys.Select(x =>
+            var tasks = this.clients.Keys.Select(clientId =>
             {
                 return Task.Run(async () =>
                 {
                     var connectChannel = Channel.CreateBounded<ConnectHandlerRequest>(1);
 
-                    this.clients[x].OnConnect(async req => await connectChannel.Writer.WriteAsync(req));
+                    this.clients[clientId].OnConnect(async request => await connectChannel.Writer.WriteAsync(request));
 
                     return await connectChannel.Reader.ReadAsync();
                 });
@@ -95,7 +104,7 @@ namespace NknSdk.Client
             }
             catch (Exception)
             {
-                this.CloseAsync();
+                Task.Run(this.CloseAsync);
             }
         }
 
@@ -129,7 +138,7 @@ namespace NknSdk.Client
             this.acceptedAddresses = addresses;
         }
 
-        public async Task<SendMessageResponse<T>> SendAsync<T>(
+        public async Task<SendMessageResponse<TResponse>> SendAsync<TResponse>(
             string destination,
             string text,
             SendOptions options = null)
@@ -137,81 +146,63 @@ namespace NknSdk.Client
             options ??= new SendOptions();
 
             var readyClientIds = this.GetReadyClientIds();
-            if (readyClientIds.Count() == 0)
-            {
-                throw new ClientNotReadyException();
-            }
 
             destination = await this.defaultClient.ProcessDestinationAsync(destination);
 
             try
             {
-                var responseChannel = Channel.CreateBounded<T>(1);
-                
-                var tasks = readyClientIds.Select(x => this.SendWithClientAsync(x, destination, text, options, responseChannel));
-                var messageId = await await Task.WhenAny(tasks);
+                var responseChannel = Channel.CreateBounded<TResponse>(1);
+                var timeoutChannel = Channel.CreateBounded<TResponse>(1);
 
-                var response = new SendMessageResponse<T> { MessageId = messageId };
+                var resultTasks = readyClientIds.Select(clientId => this.SendWithClientAsync(
+                    clientId,
+                    destination,
+                    text,
+                    options,
+                    responseChannel,
+                    timeoutChannel));
 
-                if (options.NoReply == true)
-                {
-                    return response;
-                }
-
-                var result = await responseChannel.Reader.ReadAsync().AsTask();
-
-                response.Result = result;
-
-                return response;
+                return await HandleSendMessageTasksAsync(resultTasks, options, responseChannel, timeoutChannel);
             }
             catch (Exception)
             {
-                return new SendMessageResponse<T> { Error = "failed to send with any client" };
+                return new SendMessageResponse<TResponse> { ErrorMessage = "failed to send with any client" };
             }
         }
 
-        public async Task<SendMessageResponse<T>> SendAsync<T>(
-            string destination, 
-            byte[] data, 
+        public async Task<SendMessageResponse<TResponse>> SendAsync<TResponse>(
+            string destination,
+            byte[] data,
             SendOptions options = null)
         {
             options ??= new SendOptions();
 
             var readyClientIds = this.GetReadyClientIds();
-            if (readyClientIds.Count() == 0)
-            {
-                throw new ClientNotReadyException();
-            }
 
             destination = await this.defaultClient.ProcessDestinationAsync(destination);
 
             try
             {
-                var responseChannel = Channel.CreateBounded<T>(1);
-                
-                var tasks = readyClientIds.Select(x => this.SendWithClientAsync(x, destination, data, options, responseChannel));
-                var messageId = await await Task.WhenAny(tasks);
+                var responseChannel = Channel.CreateBounded<TResponse>(1);
+                var timeoutChannel = Channel.CreateBounded<TResponse>(1);
 
-                var response = new SendMessageResponse<T> { MessageId = messageId };
+                var resultTasks = readyClientIds.Select(clientId => this.SendWithClientAsync(
+                    clientId,
+                    destination,
+                    data,
+                    options,
+                    responseChannel,
+                    timeoutChannel));
 
-                if (options.NoReply == true)
-                {
-                    return response;
-                }
-
-                var result = await responseChannel.Reader.ReadAsync().AsTask();
-
-                response.Result = result;
-
-                return response;
+                return await HandleSendMessageTasksAsync(resultTasks, options, responseChannel, timeoutChannel);
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                return new SendMessageResponse<T> { Error = "failed to send with any client" };
+                return new SendMessageResponse<TResponse> { ErrorMessage = "failed to send with any client" };
             }
         }
 
-        public async Task<byte[]> SendToManyAsync(
+        public async Task<SendMessageResponse<TResponse>> SendAsync<TResponse>(
             IList<string> destinations,
             byte[] data,
             SendOptions options = null)
@@ -219,28 +210,31 @@ namespace NknSdk.Client
             options ??= new SendOptions();
 
             var readyClientIds = this.GetReadyClientIds();
-            if (readyClientIds.Count() == 0)
-            {
-                throw new ClientNotReadyException();
-            }
 
-            destinations = await this.defaultClient.ProcessDestinationsAsync(destinations);
+            destinations = await this.defaultClient.ProcessDestinationManyAsync(destinations);
 
             try
             {
-                var tasks = readyClientIds.Select(x => this.SendWithClientAsync<byte[]>(x, destinations, data, options));
-                
-                var messageId = await await Task.WhenAny(tasks);
+                var responseChannel = Channel.CreateBounded<TResponse>(1);
+                var timeoutChannel = Channel.CreateBounded<TResponse>(1);
 
-                return messageId;
+                var sendMessageTasks = readyClientIds.Select(clientId => this.SendWithClientAsync(
+                    clientId,
+                    destinations,
+                    data,
+                    options,
+                    responseChannel,
+                    timeoutChannel));
+
+                return await HandleSendMessageTasksAsync(sendMessageTasks, options, responseChannel, timeoutChannel);
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                throw new ApplicationException("failed to send with any client");
+                return new SendMessageResponse<TResponse> { ErrorMessage = "failed to send with any client" };
             }
         }
 
-        public async Task<byte[]> SendToManyAsync(
+        public async Task<SendMessageResponse<TResponse>> SendAsync<TResponse>(
             IList<string> destinations,
             string text,
             SendOptions options = null)
@@ -248,40 +242,71 @@ namespace NknSdk.Client
             options ??= new SendOptions();
 
             var readyClientIds = this.GetReadyClientIds();
-            if (readyClientIds.Count() == 0)
-            {
-                throw new ClientNotReadyException();
-            }
 
-            destinations = await this.defaultClient.ProcessDestinationsAsync(destinations);
+            destinations = await this.defaultClient.ProcessDestinationManyAsync(destinations);
 
             try
             {
-                var tasks = readyClientIds.Select(x => this.SendWithClientAsync<byte[]>(x, destinations, text, options));
-                
-                var messageId = await await Task.WhenAny(tasks);
+                var responseChannel = Channel.CreateBounded<TResponse>(1);
+                var timeoutChannel = Channel.CreateBounded<TResponse>(1);
 
-                return messageId;
+                var resultTasks = readyClientIds.Select(clientId => this.SendWithClientAsync(
+                    clientId,
+                    destinations,
+                    text,
+                    options,
+                    responseChannel,
+                    timeoutChannel));
+
+                return await HandleSendMessageTasksAsync(resultTasks, options, responseChannel, timeoutChannel);
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                throw new ApplicationException("failed to send with any client");
+                return new SendMessageResponse<TResponse> { ErrorMessage = "failed to send with any client" };
             }
+        }
+
+        public async Task<SendMessageResponse<byte[]>> PublishAsync(
+            string topic,
+            string text,
+            PublishOptions options = null)
+        {
+            options ??= new PublishOptions();
+            options.NoReply = true;
+
+            var subscribers = await this.GetAllSubscribersAsync(topic, options);
+
+            return await this.SendAsync<byte[]>(subscribers.ToList(), text);
+        }
+
+        public async Task<SendMessageResponse<byte[]>> PublishAsync(
+            string topic,
+            byte[] data,
+            PublishOptions options = null)
+        {
+            options ??= new PublishOptions();
+            options.NoReply = true;
+
+            var subscribers = await this.GetAllSubscribersAsync(topic, options);
+
+            return await this.SendAsync<byte[]>(subscribers.ToList(), data);
         }
 
         /// <summary>
         /// Dial a session to a remote NKN address.
         /// </summary>
         /// <param name="remoteAddress">The address to open session with</param>
-        /// <param name="sessionConfiguration">Session configuration options</param>
+        /// <param name="options">Session configuration options</param>
         /// <returns>The session object</returns>
-        public async Task<Session> DialAsync(string remoteAddress, SessionConfiguration sessionConfiguration)
+        public async Task<Session> DialAsync(string remoteAddress, SessionOptions options = null)
         {
+            options ??= new SessionOptions();
+
             var dialTimeout = Ncp.Constants.DefaultInitialRetransmissionTimeout;
 
             var sessionId = PseudoRandom.RandomBytesAsHexString(Constants.SessionIdLength);
 
-            var session = this.MakeSession(remoteAddress, sessionId, sessionConfiguration);
+            var session = this.MakeSession(remoteAddress, sessionId, options);
 
             var sessionKey = Session.MakeKey(remoteAddress, sessionId);
 
@@ -323,29 +348,264 @@ namespace NknSdk.Client
             }
         }
 
-        private void InitializeClients()
+        public async Task<GetLatestBlockHashResult> GetLatestBlockAsync()
         {
-            var clients = new ConcurrentDictionary<string, Client>();
-            if (options.OriginalClient)
+            foreach (var clientId in this.clients.Keys)
             {
-                var clientId = Address.AddIdentifier("", "");
-                clients[clientId] = new Client(options);
-
-                if (string.IsNullOrWhiteSpace(options.Seed))
+                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
-                    options.Seed = clients[clientId].Key.Seed;
+                    try
+                    {
+                        return await Wallet.Wallet.GetLatestBlockAsync(this.clients[clientId].Wallet.Options);
+                    }
+                    catch (Exception)
+                    {
+                    }
                 }
             }
 
-            for (int i = 0; i < options.NumberOfSubClients; i++)
-            {
-                var clientId = Address.AddIdentifier("", i.ToString());
-                options.Identifier = Address.AddIdentifier(this.options.Identifier, i.ToString());
-                clients[clientId] = new Client(options);
+            return await Wallet.Wallet.GetLatestBlockAsync(WalletOptions.NewFrom(this.options));
+        }
 
-                if (i == 0 && string.IsNullOrWhiteSpace(options.Seed))
+        public async Task<GetRegistrantResult> GetRegistrantAsync(string name)
+        {
+            foreach (var clientId in this.clients.Keys)
+            {
+                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
-                    options.Seed = clients[clientId].Seed;
+                    try
+                    {
+                        return await Wallet.Wallet.GetRegistrantAsync(name, this.clients[clientId].Wallet.Options);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+
+            return await Wallet.Wallet.GetRegistrantAsync(name, WalletOptions.NewFrom(this.options));
+        }
+
+        public async Task<GetSubscribersResult> GetSubscribersAsync(string topic, PublishOptions options = null)
+        {
+            options ??= new PublishOptions();
+
+            foreach (var clientId in this.clients.Keys)
+            {
+                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                {
+                    try
+                    {
+                        var mergedOptions = this.clients[clientId].Wallet.Options.MergeWith(options);
+                        return await Wallet.Wallet.GetSubscribers(topic, mergedOptions);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+
+            var walletOptions = WalletOptions.NewFrom(this.options).AssignFrom(options);
+            return await Wallet.Wallet.GetSubscribers(topic, walletOptions);
+        }
+
+        public async Task<int> GetSubscribersCountAsync(string topic)
+        {
+            foreach (var clientId in this.clients.Keys)
+            {
+                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                {
+                    try
+                    {
+                        return await Wallet.Wallet.GetSubscribersCount(topic, this.clients[clientId].Wallet.Options);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+
+            return await Wallet.Wallet.GetSubscribersCount(topic, WalletOptions.NewFrom(this.options));
+        }
+
+        public async Task<GetSubscriptionResult> GetSubscriptionAsync(string topic, string subscriber)
+        {
+            foreach (var clientId in this.clients.Keys)
+            {
+                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                {
+                    try
+                    {
+                        return await Wallet.Wallet.GetSubscription(
+                            topic,
+                            subscriber,
+                            this.clients[clientId].Wallet.Options);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+
+            return await Wallet.Wallet.GetSubscription(
+                topic,
+                subscriber,
+                WalletOptions.NewFrom(this.options));
+        }
+
+        public async Task<Amount> GetBalanceAsync(string address = null)
+        {
+            var addr = string.IsNullOrEmpty(address) ? this.defaultClient.Wallet.Address : address;
+
+            foreach (var clientId in this.clients.Keys)
+            {
+                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                {
+                    try
+                    {
+                        var balanceResult = await Wallet.Wallet.GetBalance(addr, this.clients[clientId].Wallet.Options);
+
+                        return new Amount(balanceResult.Amount);
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+
+            var result = await Wallet.Wallet.GetBalance(addr, WalletOptions.NewFrom(this.options));
+
+            return new Amount(result.Amount);
+        }
+
+        public async Task<GetNonceByAddrResult> GetNonceAsync()
+        {
+            return await this.GetNonceAsync(string.Empty);
+        }
+
+        public async Task<GetNonceByAddrResult> GetNonceAsync(string address = null, bool txPool = false)
+        {
+            var addr = string.IsNullOrEmpty(address) ? this.defaultClient.Wallet.Address : address;
+
+            foreach (var clientId in this.clients.Keys)
+            {
+                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                {
+                    try
+                    {
+                        var options = this.clients[clientId].Wallet.Options.Clone();
+                        options.TxPool = txPool;
+
+                        var getNonceResult = await Wallet.Wallet.GetNonce(addr, options);
+
+                        return getNonceResult;
+                    }
+                    catch (Exception)
+                    {
+                    }
+                }
+            }
+
+            var walletOptions = WalletOptions.NewFrom(this.options);
+            walletOptions.TxPool = txPool;
+
+            return await Wallet.Wallet.GetNonce(addr, walletOptions);
+        }
+
+        public async Task<string> SendTransactionAsync(Transaction tx)
+        {
+            var clients = this.clients.Values.Where(x => string.IsNullOrEmpty(x.Wallet.Options.RpcServerAddress) == false);
+            if (clients.Count() > 0)
+            {
+                var sendTransactionTasks = clients.Select(x => Wallet.Wallet.SendTransaction(tx, x.Wallet.Options));
+                return await await Task.WhenAny(sendTransactionTasks);
+            }
+
+            return await Wallet.Wallet.SendTransaction(tx, WalletOptions.NewFrom(this.options));
+        }
+
+        public Task<string> TransferTo(string toAddress, decimal amount, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+
+            var walletOptions = WalletOptions.NewFrom(options);
+
+            return RpcClient.TransferTo(toAddress, new Amount(amount), this, walletOptions);
+        }
+
+        public Task<string> RegisterName(string name, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+
+            var walletOptions = WalletOptions.NewFrom(options);
+
+            return RpcClient.RegisterName(name, this, walletOptions);
+        }
+
+        public Task<string> DeleteName(string name, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+
+            var walletOptions = WalletOptions.NewFrom(options);
+
+            return RpcClient.DeleteName(name, this, walletOptions);
+        }
+
+        public Task<string> Subscribe(
+            string topic,
+            int duration,
+            string identifier,
+            string meta,
+            TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+
+            var walletOptions = WalletOptions.NewFrom(options);
+
+            return RpcClient.Subscribe(topic, duration, identifier, meta, this, walletOptions);
+        }
+
+        public Task<string> Unsubscribe(string topic, string identifier, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+
+            var walletOptions = WalletOptions.NewFrom(options);
+
+            return RpcClient.Unsubscribe(topic, identifier, this, walletOptions);
+        }
+
+        public Transaction CreateTransaction(Payload payload, long nonce, WalletOptions options)
+        {
+            return this.defaultClient.Wallet.CreateTransaction(payload, nonce, options);
+        }
+
+        private void InitializeClients()
+        {
+            var baseIdentifier = string.IsNullOrEmpty(this.options.Identifier) ? "" : this.options.Identifier;
+            var clients = new ConcurrentDictionary<string, Client>();
+
+            if (this.options.OriginalClient)
+            {
+                var clientId = Common.Address.AddIdentifier("", "");
+                clients[clientId] = new Client(this.options);
+
+                if (string.IsNullOrWhiteSpace(this.options.SeedHex))
+                {
+                    this.options.SeedHex = clients[clientId].Key.SeedHex;
+                }
+            }
+
+            for (int i = 0; i < this.options.NumberOfSubClients; i++)
+            {
+                var clientId = Common.Address.AddIdentifier("", i.ToString());
+
+                this.options.Identifier = Common.Address.AddIdentifier(baseIdentifier, i.ToString());
+
+                clients[clientId] = new Client(this.options);
+
+                if (i == 0 && string.IsNullOrWhiteSpace(this.options.SeedHex))
+                {
+                    this.options.SeedHex = clients[clientId].SeedHex;
                 }
             }
 
@@ -355,20 +615,150 @@ namespace NknSdk.Client
                 throw new InvalidArgumentException("should have at least one client");
             }
 
-            foreach (var clientId in clientIds)
+            foreach (var clientId in clients.Keys)
             {
-                clients[clientId].OnMessage(message => this.HandleClientMessageAsync(message, clientId));
+                clients[clientId].OnMessage(async message =>
+                {
+                    if (this.isClosed)
+                    {
+                        return false;
+                    }
+
+                    if (message.PayloadType == Common.Protobuf.Payloads.PayloadType.Session)
+                    {
+                        if (!message.IsEncrypted)
+                        {
+                            return false;
+                        }
+
+                        try
+                        {
+                            await this.HandleSessionMessageAsync(clientId, message.Source, message.MessageId, message.Payload);
+                        }
+                        catch (AddressNotAllowedException)
+                        {
+                        }
+                        catch (SessionClosedException)
+                        {
+                        }
+                        catch (Exception ex)
+                        {
+                        }
+
+                        return false;
+                    }
+
+                    var messageKey = message.MessageId.ToHexString();
+                    lock (this.syncLock)
+                    {
+                        if (this.messageCache.Contains(messageKey))
+                        {
+                            return false;
+                        }
+
+                        var expiration = DateTime.Now.AddSeconds(options.MessageCacheExpiration);
+                        this.messageCache.Set(messageKey, clientId, expiration);
+                    }
+
+                    var removeIdentifierResult = Common.Address.RemoveIdentifier(message.Source);
+                    message.Source = removeIdentifierResult.Address;
+
+                    var responses = Enumerable.Empty<object>();
+
+                    if (this.messageHandlers.Any())
+                    {
+                        var tasks = this.messageHandlers.Select(async func =>
+                        {
+                            try
+                            {
+                                var result = await func(message);
+
+                                return result;
+                            }
+                            catch (Exception)
+                            {
+                                return null;
+                            }
+                        });
+
+                        responses = await Task.WhenAll(tasks);
+                    }
+
+                    if (message.NoReply == false)
+                    {
+                        var responded = false;
+                        foreach (var response in responses)
+                        {
+                            if (response is bool res)
+                            {
+                                if (res == false)
+                                {
+                                    return false;
+                                }
+                            }
+                            else if (response != null)
+                            {
+                                if (response is byte[] bytes)
+                                {
+                                    await this.SendAsync<byte[]>(
+                                        message.Source,
+                                        bytes,
+                                        new SendOptions
+                                        {
+                                            IsEncrypted = message.IsEncrypted,
+                                            HoldingSeconds = 0,
+                                            ReplyToId = message.MessageId.ToHexString()
+                                        });
+
+                                    responded = true;
+                                }
+                                else if (response is string text)
+                                {
+                                    await this.SendAsync<byte[]>(
+                                        message.Source,
+                                        text,
+                                        new SendOptions
+                                        {
+                                            IsEncrypted = message.IsEncrypted,
+                                            HoldingSeconds = 0,
+                                            ReplyToId = message.MessageId.ToHexString()
+                                        });
+
+                                    responded = true;
+                                }
+                            }
+                        }
+
+                        if (responded == false)
+                        {
+                            foreach (var client in this.clients)
+                            {
+                                if (client.Value.IsReady)
+                                {
+                                    client.Value.SendAck(
+                                        Common.Address.AddIdentifierPrefix(message.Source, client.Key),
+                                        message.MessageId,
+                                        message.IsEncrypted);
+                                }
+                            }
+                        }
+                    }
+
+                    return false;
+                });
             }
 
             this.clients = clients;
+            this.identifier = baseIdentifier;
+            this.options.Identifier = baseIdentifier;
             this.defaultClient = clients[clientIds.First()];
         }
 
         private bool IsAcceptedAddress(string address)
         {
-            foreach (var item in this.acceptedAddresses)
+            foreach (var pattern in this.acceptedAddresses)
             {
-                if (item.IsMatch(address))
+                if (pattern.IsMatch(address))
                 {
                     return true;
                 }
@@ -377,19 +767,19 @@ namespace NknSdk.Client
             return false;
         }
 
-        private Session MakeSession(string remoteAddress, string sessionId, SessionConfiguration configuration)
+        private Session MakeSession(string remoteAddress, string sessionId, SessionOptions options)
         {
             var clientIds = this.GetReadyClientIds().OrderBy(x => x).ToArray();
 
             return new Session(
-                this.address,
+                this.Address,
                 remoteAddress,
                 clientIds,
                 null,
-                SendSessionDataAsync,
-                configuration);
+                SendSessionDataHandler,
+                options);
 
-            async Task SendSessionDataAsync(string localClientId, string remoteClientId, byte[] data)
+            async Task SendSessionDataHandler(string localClientId, string remoteClientId, byte[] data)
             {
                 var client = this.clients[localClientId];
                 if (client.IsReady == false)
@@ -398,146 +788,100 @@ namespace NknSdk.Client
                 }
 
                 var payload = MessageFactory.MakeSessionPayload(data, sessionId);
-                var destination = Address.AddIdentifierPrefix(remoteAddress, remoteClientId);
+                var destination = Common.Address.AddIdentifierPrefix(remoteAddress, remoteClientId);
 
                 await client.SendPayloadAsync(destination, payload);
             }
         }
 
         private IEnumerable<string> GetReadyClientIds()
-            => this.clients.Keys.Where(x => this.clients.ContainsKey(x) && this.clients[x].IsReady);
-
-        private async Task<object> HandleClientMessageAsync(MessageHandlerRequest message, string clientId)
         {
-            if (this.isClosed)
+            var readyClientIds = this.clients.Keys
+                .Where(clientId => this.clients.ContainsKey(clientId) && this.clients[clientId].IsReady);
+
+            if (readyClientIds.Count() == 0)
             {
-                return false;
+                throw new ClientNotReadyException();
             }
 
-            if (message.PayloadType == PayloadType.Session)
+            return readyClientIds;
+        }
+
+        private async Task<IEnumerable<string>> GetAllSubscribersAsync(string topic, PublishOptions options)
+        {
+            var offset = options.Offset;
+
+            var getSubscribersResult = await this.GetSubscribersAsync(topic, options);
+
+            var subscribers = getSubscribersResult.Subscribers;
+            var subscribersInTxPool = getSubscribersResult.SubscribersInTxPool;
+
+            var walletOptions = options.Clone();
+
+            while (getSubscribersResult.Subscribers != null && getSubscribersResult.Subscribers.Count() >= options.Limit)
             {
-                if (!message.IsEncrypted)
+                offset += options.Limit;
+
+                walletOptions.Offset = offset;
+                walletOptions.TxPool = false;
+
+                getSubscribersResult = await this.GetSubscribersAsync(topic, walletOptions);
+
+                if (getSubscribersResult.Subscribers != null)
                 {
-                    return false;
-                }
-
-                try
-                {
-                    await this.HandleSessionMessageAsync(clientId, message.Source, message.MessageId, message.Payload);
-                }
-                catch (AddressNotAllowedException)
-                {
-                }
-                catch (SessionClosedException)
-                {
-                }
-                catch (Exception ex)
-                {
-
-                }
-
-                return false;
-            }
-
-            var messageKey = message.MessageId.ToHexString();
-            if (this.messageCache.Get(messageKey) != null)
-            {
-                return false;
-            }
-
-            var expiration = DateTime.Now.AddSeconds(options.MessageHoldingSeconds.Value);
-            this.messageCache.Set(messageKey, clientId, expiration);
-
-            var removeIdentifierResult = Address.RemoveIdentifier(message.Source);
-            message.Source = removeIdentifierResult.Address;
-
-            var responses = Enumerable.Empty<object>();
-
-            if (this.messageHandlers.Any())
-            {
-                var tasks = this.messageHandlers.Select(async func =>
-                {
-                    try
-                    {
-                        var result = await func(message);
-
-                        return result;
-                    }
-                    catch (Exception)
-                    {
-                        return null;
-                    }
-                });
-
-                responses = await Task.WhenAll(tasks);
-            }
-
-            if (message.NoReply == false)
-            {
-                var responded = false;
-                foreach (var response in responses)
-                {
-                    if (response is bool res)
-                    {
-                        if (res == false)
-                        {
-                            return true;
-                        }
-                    }
-                    else if (response != null)
-                    {
-                        if (response is byte[] bytes)
-                        {
-                            await this.SendAsync<byte[]>(
-                                message.Source,
-                                bytes,
-                                new SendOptions
-                                {
-                                    IsEncrypted = message.IsEncrypted,
-                                    HoldingSeconds = 0,
-                                    ReplyToId = message.MessageId.ToHexString()
-                                });
-
-                            responded = true;
-                        }
-                        else if (response is string text)
-                        {
-                            await this.SendAsync<byte[]>(
-                                message.Source,
-                                text,
-                                new SendOptions
-                                {
-                                    IsEncrypted = message.IsEncrypted,
-                                    HoldingSeconds = 0,
-                                    ReplyToId = message.MessageId.ToHexString()
-                                });
-
-                            responded = true;
-                        }
-                    }
-                }
-
-                if (responded == false)
-                {
-                    foreach (var client in this.clients)
-                    {
-                        if (client.Value.IsReady)
-                        {
-                            client.Value.SendAck(
-                                Address.AddIdentifierPrefix(message.Source, client.Key),
-                                message.MessageId,
-                                message.IsEncrypted);
-                        }
-                    }
+                    subscribers = subscribers.Concat(getSubscribersResult.Subscribers);
                 }
             }
 
-            return false;
+            if (options.TxPool == true && subscribersInTxPool != null)
+            {
+                subscribers = subscribers.Concat(subscribersInTxPool);
+            }
+
+            return subscribers;
+        }
+
+        private static async Task<SendMessageResponse<T>> HandleSendMessageTasksAsync<T>(
+            IEnumerable<Task<byte[]>> resultTasks,
+            SendOptions options, 
+            Channel<T> responseChannel, 
+            Channel<T> timeoutChannel)
+        {
+            var messageId = await await Task.WhenAny(resultTasks);
+
+            var response = new SendMessageResponse<T> { MessageId = messageId };
+
+            if (options.NoReply == true || messageId == null)
+            {
+                responseChannel.Writer.TryComplete();
+                timeoutChannel.Writer.TryComplete();
+
+                return response;
+            }
+
+            var cts = new CancellationTokenSource();
+            var channelTasks = new List<Task<Channel<T>>>
+            {
+                responseChannel.WaitToRead(cts.Token),
+                timeoutChannel.WaitToRead(cts.Token)
+            };
+
+            var channel = await channelTasks.FirstAsync(cts);
+            if (channel == timeoutChannel)
+            {
+                response.ErrorMessage = $"A response was not returned in specified time: {options.ResponseTimeout} ms. Request timed out.";
+                return response;
+            }
+
+            var result = await responseChannel.Reader.ReadAsync().AsTask();
+
+            response.Result = result;
+            return response;
         }
 
         private async Task HandleSessionMessageAsync(string clientId, string source, byte[] sessionId, byte[] data)
         {
-            var remote = Address.RemoveIdentifier(source);
+            var remote = Common.Address.RemoveIdentifier(source);
             var remoteAddress = remote.Address;
             var remoteClientId = remote.ClientId;
             var sessionKey = Session.MakeKey(remoteAddress, sessionId.ToHexString());
@@ -545,7 +889,7 @@ namespace NknSdk.Client
             Session session;
             bool existed = false;
 
-            lock (this)
+            lock (this.syncLock)
             {
                 existed = this.sessions.ContainsKey(sessionKey);
                 if (existed)
@@ -559,13 +903,13 @@ namespace NknSdk.Client
                         throw new AddressNotAllowedException();
                     }
 
-                    session = this.MakeSession(remoteAddress, sessionId.ToHexString(), this.options.SessionConfiguration);
+                    session = this.MakeSession(remoteAddress, sessionId.ToHexString(), this.options.SessionOptions);
 
                     this.sessions.Add(sessionKey, session);
                 }
             }
 
-            await session.ReceiveWithAsync(clientId, remoteClientId, data);
+            await session.ReceiveWithClientAsync(clientId, remoteClientId, data);
 
             if (existed == false)
             {
@@ -599,19 +943,10 @@ namespace NknSdk.Client
             Channel<T> responseChannel = null,
             Channel<T> timeoutChannel = null)
         {
-            var client = this.clients[clientId];
-            if (client == null)
-            {
-                throw new InvalidArgumentException("no such clientId");
-            }
-
-            if (client.IsReady == false)
-            {
-                throw new ClientNotReadyException();
-            }
+            var client = this.GetClient(clientId);
 
             var messageId = await client.SendTextAsync(
-                Address.AddIdentifierPrefix(destination, clientId),
+                Common.Address.AddIdentifierPrefix(destination, clientId),
                 text,
                 options,
                 responseChannel,
@@ -628,19 +963,10 @@ namespace NknSdk.Client
             Channel<T> responseChannel = null,
             Channel<T> timeoutChannel = null)
         {
-            var client = this.clients[clientId];
-            if (client == null)
-            {
-                throw new InvalidArgumentException("no such clientId");
-            }
-
-            if (client.IsReady == false)
-            {
-                throw new ClientNotReadyException();
-            }
+            var client = this.GetClient(clientId);
 
             var messageId = await client.SendDataAsync(
-                Address.AddIdentifierPrefix(destination, clientId),
+                Common.Address.AddIdentifierPrefix(destination, clientId),
                 data,
                 options,
                 responseChannel,
@@ -657,19 +983,10 @@ namespace NknSdk.Client
             Channel<T> responseChannel = null,
             Channel<T> timeoutChannel = null)
         {
-            var client = this.clients[clientId];
-            if (client == null)
-            {
-                throw new InvalidArgumentException("no such clientId");
-            }
+            var client = this.GetClient(clientId);
 
-            if (client.IsReady == false)
-            {
-                throw new ClientNotReadyException();
-            }
-
-            var messageId = await client.SendDataAsync(
-                destinations.Select(x => Address.AddIdentifierPrefix(x, clientId)).ToList(),
+            var messageId = await client.SendDataManyAsync(
+                destinations.Select(x => Common.Address.AddIdentifierPrefix(x, clientId)).ToList(),
                 data,
                 options,
                 responseChannel,
@@ -686,25 +1003,37 @@ namespace NknSdk.Client
             Channel<T> responseChannel = null,
             Channel<T> timeoutChannel = null)
         {
-            var client = this.clients[clientId];
-            if (client == null)
-            {
-                throw new InvalidArgumentException("no such clientId");
-            }
+            var client = this.GetClient(clientId);
 
-            if (client.IsReady == false)
-            {
-                throw new ClientNotReadyException();
-            }
-
-            var messageId = await client.SendTextAsync(
-                destinations.Select(x => Address.AddIdentifierPrefix(x, clientId)).ToList(),
+            var messageId = await client.SendTextManyAsync(
+                destinations.Select(x => Common.Address.AddIdentifierPrefix(x, clientId)).ToList(),
                 text,
                 options,
                 responseChannel,
                 timeoutChannel);
 
             return messageId;
+        }
+
+        private Client GetClient(string clientId)
+        {
+            if (this.clients.ContainsKey(clientId) == false)
+            {
+                throw new InvalidArgumentException($"no client with such clientId: {clientId}");
+            }
+
+            var client = this.clients[clientId];
+            if (client == null)
+            {
+                throw new InvalidArgumentException($"no client with such clientId: {clientId}");
+            }            
+
+            if (client.IsReady == false)
+            {
+                throw new ClientNotReadyException();
+            }
+
+            return client;
         }
     }
 }
