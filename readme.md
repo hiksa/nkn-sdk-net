@@ -86,10 +86,7 @@ client.OnConnect(() => Console.WriteLine("Client ready."));
 Send text message to other clients and receive a text response:
 
 ```c#
-var textResponse = await client.SendAsync<string>(
-    "another-client-address",
-    "hello world!",
-);
+var textResponse = await client.SendAsync<string>("another-client-address", "hello world!");
 
 Console.WriteLine(textResponse.Result);
 ```
@@ -97,10 +94,7 @@ Console.WriteLine(textResponse.Result);
 You can also send `byte[]`:
 
 ```c#
-client.SendAsync<byte[]>(
-    "another-client-address",
-    new byte[] { 1, 2, 3, 4, 5 }
-);
+await client.SendAsync<byte[]>("another-client-address", new byte[] { 1, 2, 3, 4, 5 });
 ```
 
 The destination address can also be a name registered using [Wallet](#wallet).
@@ -108,10 +102,7 @@ The destination address can also be a name registered using [Wallet](#wallet).
 Publish text message to all subscribers of a topic (subscribing to a topic can be done through [Wallet](#wallet)):
 
 ```c#
-await client.PublishAsync(
-    "topic",
-    "hello world!",
-);
+await client.PublishAsync("topic", "hello world!");
 ```
 
 Receive data from other clients:
@@ -148,10 +139,7 @@ The `SendAsync` method will return a `Task` that will complete when sender recei
 ```c#
 try
 {
-    var response = await client.SendAsync<byte[]>(
-        "another-client-address",
-        "hello world!"
-    );
+    var response = await client.SendAsync<byte[]>("another-client-address", "hello world!");
 
     Console.WriteLine("Receive a byte[] reply: " + string.Join(", ", response.Result));
 }
@@ -166,10 +154,7 @@ or `string`:
 ```c#
 try
 {
-    var response = await client.SendAsync<string>(
-        "another-client-address",
-        "hello world!"
-    );
+    var response = await client.SendAsync<string>("another-client-address", "hello world!");
 
     Console.WriteLine("Receive a string reply: " + response.Result);
 }
@@ -184,10 +169,7 @@ Client receiving data will automatically send an acknowledgement back to sender 
 ```c#
 try
 {
-    await client.SendAsync<byte[]>(
-        "another-client-address",
-        "hello world!"
-    );
+    await client.SendAsync<byte[]>("another-client-address", "hello world!");
 
     Console.WriteLine("Receive ACK.");
 }
