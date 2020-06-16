@@ -355,6 +355,8 @@ namespace NknSdk.Wallet
 
         public Transaction CreateOrUpdateNanoPay(string toAddress, decimal amount, int expiration, long? id, TransactionOptions options = null)
         {
+            options ??= new TransactionOptions();
+
             if (Common.Address.Verify(toAddress) == false)
             {
                 throw new System.Exception();
