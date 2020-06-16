@@ -52,7 +52,7 @@ Create a client using an existing secret seed:
 ```c#
 var options = new ClientOptions()
 {
-	SeeHex = "2bc5501d131696429264eb7286c44a29dd44dd66834d9471bd8b0eb875a1edb0"
+    SeeHex = "2bc5501d131696429264eb7286c44a29dd44dd66834d9471bd8b0eb875a1edb0"
 };
 
 var client = new Client(options);
@@ -65,7 +65,7 @@ By default the client will use bootstrap RPC server (for getting node address) p
 ```c#
 var options = new ClientOptions()
 {
-	RpcServerAddress = "https://ip:port"
+    RpcServerAddress = "https://ip:port"
 };
 
 var client = new Client(options);
@@ -136,7 +136,7 @@ Handler can also be an async method, and reply can be `byte[]` as well:
 
 ```c#
 client.OnMessage(async (MessageHandlerRequest request) => {
-  return new byte[] { 1,2,3,4,5 };
+    return new byte[] { 1,2,3,4,5 };
 });
 ```
 
@@ -147,16 +147,16 @@ The `SendAsync` method will return a `Task` that will complete when sender recei
 ```c#
 try
 {
-	var response = await client.SendAsync<byte[]>(
-		"another-client-address",
-		"hello world!"
-	);
+    var response = await client.SendAsync<byte[]>(
+        "another-client-address",
+    "hello world!"
+    );
 
-	Console.WriteLine("Receive a byte[] reply: " + string.Join(", ", response.Result));
+    Console.WriteLine("Receive a byte[] reply: " + string.Join(", ", response.Result));
 }
 catch (Exception e)
 {
-	Console.WriteLine("Catch: " + e.Message);
+    Console.WriteLine("Catch: " + e.Message);
 }
 ```
 
@@ -165,16 +165,16 @@ or `string`:
 ```c#
 try
 {
-	var response = await client.SendAsync<string>(
-		"another-client-address",
-		"hello world!"
-	);
+    var response = await client.SendAsync<string>(
+        "another-client-address",
+        "hello world!"
+    );
 
-	Console.WriteLine("Receive a string reply: " + response.Result);
+    Console.WriteLine("Receive a string reply: " + response.Result);
 }
 catch (Exception e)
 {
-	Console.WriteLine("Catch: " + e.Message);
+    Console.WriteLine("Catch: " + e.Message);
 }
 ```
 
@@ -183,16 +183,16 @@ Client receiving data will automatically send an acknowledgement back to sender 
 ```c#
 try
 {
-	await client.SendAsync<byte[]>(
-		"another-client-address",
-		"hello world!"
-	);
+    await client.SendAsync<byte[]>(
+        "another-client-address",
+        "hello world!"
+    );
 
-	Console.WriteLine("Receive ACK.");
+    Console.WriteLine("Receive ACK.");
 }
 catch (Exception e)
 {
-	Console.WriteLine("Catch: " + e.Message);
+    Console.WriteLine("Catch: " + e.Message);
 }
 ```
 
@@ -207,8 +207,8 @@ MultiClient basically has the same API as [client](#client), with a few addition
 ```c#
 var options =  new MultiClientOptions()
 {
-	NumberOfSubClients = 4,
-	OriginalClient = false
+    NumberOfSubClients = 4,
+    OriginalClient = false
 };
 
 var multiClient = new MultiClient(options);
@@ -284,8 +284,8 @@ Create wallet from a secret seed:
 ```c#
 var options = new WalletOptions()
 {
-	Password = "new-wallet-password",
-	SeedHex = wallet.SeedHex
+    Password = "new-wallet-password",
+    SeedHex = wallet.SeedHex
 };
 
 var wallet = new Wallet(options);
@@ -316,8 +316,8 @@ By default the wallet will use RPC server provided by nkn.org. Any NKN full node
 ```c#
 var options = new WalletOptions()
 {
-	Password = "new-wallet-password",
-	RpcServerAddress = "https://ip:port"
+    Password = "new-wallet-password",
+    RpcServerAddress = "https://ip:port"
 };
 
 var wallet = new Wallet(options);
