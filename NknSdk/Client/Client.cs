@@ -214,7 +214,7 @@ namespace NknSdk.Client
         }
 
         public async Task<SendMessageResponse<TResponse>> SendAsync<TResponse>(
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             byte[] data,
             SendOptions options = null)
         {
@@ -236,7 +236,7 @@ namespace NknSdk.Client
         }
 
         public async Task<SendMessageResponse<TResponse>> SendAsync<TResponse>(
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             string text,
             SendOptions options = null)
         {
@@ -267,7 +267,7 @@ namespace NknSdk.Client
 
             var subscribers = await this.GetAllSubscribersAsync(topic, options);
 
-            return await this.SendAsync<byte[]>(subscribers.ToList(), text);
+            return await this.SendAsync<byte[]>(subscribers.ToList(), text, SendOptions.NewFrom(options));
         }
 
         public async Task<SendMessageResponse<byte[]>> PublishAsync(
@@ -280,7 +280,7 @@ namespace NknSdk.Client
 
             var subscribers = await this.GetAllSubscribersAsync(topic, options);
 
-            return await this.SendAsync<byte[]>(subscribers.ToList(), data);
+            return await this.SendAsync<byte[]>(subscribers.ToList(), data, SendOptions.NewFrom(options));
         }
 
         public async Task<GetLatestBlockHashResult> GetLatestBlockAsync()
@@ -328,7 +328,7 @@ namespace NknSdk.Client
                 try
                 {
                     var mergedOptions = this.Wallet.Options.MergeWith(options);
-                    return await NknSdk.Wallet.Wallet.GetSubscribersWithMetadata(topic, mergedOptions);
+                    return await NknSdk.Wallet.Wallet.GetSubscribersWithMetadataAsync(topic, mergedOptions);
                 }
                 catch (Exception)
                 {
@@ -336,7 +336,7 @@ namespace NknSdk.Client
             }
 
             var walletOptions = WalletOptions.NewFrom(this.options).AssignFrom(options);
-            return await NknSdk.Wallet.Wallet.GetSubscribersWithMetadata(topic, walletOptions);
+            return await NknSdk.Wallet.Wallet.GetSubscribersWithMetadataAsync(topic, walletOptions);
         }
 
         public async Task<GetSubscribersResult> GetSubscribersAsync(string topic, PublishOptions options = null)
@@ -348,7 +348,7 @@ namespace NknSdk.Client
                 try
                 {
                     var mergedOptions = this.Wallet.Options.MergeWith(options);
-                    return await NknSdk.Wallet.Wallet.GetSubscribers(topic, mergedOptions);
+                    return await NknSdk.Wallet.Wallet.GetSubscribersAsync(topic, mergedOptions);
                 }
                 catch (Exception)
                 {
@@ -356,7 +356,7 @@ namespace NknSdk.Client
             }
 
             var walletOptions = WalletOptions.NewFrom(this.options).AssignFrom(options);
-            return await NknSdk.Wallet.Wallet.GetSubscribers(topic, walletOptions);
+            return await NknSdk.Wallet.Wallet.GetSubscribersAsync(topic, walletOptions);
         }
 
         public async Task<long> GetSubscrinersCountAsync(string topic)
@@ -365,14 +365,14 @@ namespace NknSdk.Client
             {
                 try
                 {
-                    return await NknSdk.Wallet.Wallet.GetSubscribersCount(topic, this.Wallet.Options);
+                    return await NknSdk.Wallet.Wallet.GetSubscribersCountAsync(topic, this.Wallet.Options);
                 }
                 catch (Exception)
                 {
                 }
             }
 
-            return await NknSdk.Wallet.Wallet.GetSubscribersCount(topic, WalletOptions.NewFrom(this.options));
+            return await NknSdk.Wallet.Wallet.GetSubscribersCountAsync(topic, WalletOptions.NewFrom(this.options));
         }
 
         public async Task<GetSubscriptionResult> GetSubscriptionAsync(string topic, string subscriber)
@@ -381,14 +381,14 @@ namespace NknSdk.Client
             {
                 try
                 {
-                    return await NknSdk.Wallet.Wallet.GetSubscription(topic, subscriber, this.Wallet.Options);
+                    return await NknSdk.Wallet.Wallet.GetSubscriptionAsync(topic, subscriber, this.Wallet.Options);
                 }
                 catch (Exception)
                 {
                 }
             }
 
-            return await NknSdk.Wallet.Wallet.GetSubscription(topic, subscriber, WalletOptions.NewFrom(this.options));
+            return await NknSdk.Wallet.Wallet.GetSubscriptionAsync(topic, subscriber, WalletOptions.NewFrom(this.options));
         }
 
         public async Task<Amount> GetBalanceAsync(string address = "", WalletOptions options = null)
@@ -401,7 +401,7 @@ namespace NknSdk.Client
                 try
                 {
 
-                    var balanceResult = await NknSdk.Wallet.Wallet.GetBalance(addr, options);
+                    var balanceResult = await NknSdk.Wallet.Wallet.GetBalanceAsync(addr, options);
 
                     return new Amount(balanceResult.Amount);
                 }
@@ -410,7 +410,7 @@ namespace NknSdk.Client
                 }
             }
 
-            var result = await NknSdk.Wallet.Wallet.GetBalance(addr, this.Wallet.Options);
+            var result = await NknSdk.Wallet.Wallet.GetBalanceAsync(addr, this.Wallet.Options);
 
             return new Amount(result.Amount);
         }
@@ -431,9 +431,7 @@ namespace NknSdk.Client
                     var options = this.Wallet.Options.Clone();
                     options.TxPool = txPool;
 
-                    var getNonceResult = await NknSdk.Wallet.Wallet.GetNonce(addr, options);
-
-                    return getNonceResult;
+                    return await NknSdk.Wallet.Wallet.GetNonceAsync(addr, options);
                 }
                 catch (Exception)
                 {
@@ -443,9 +441,7 @@ namespace NknSdk.Client
             var walletOptions = WalletOptions.NewFrom(this.options);
             walletOptions.TxPool = txPool;
 
-            var result = await NknSdk.Wallet.Wallet.GetNonce(addr, walletOptions);
-
-            return result;
+            return await NknSdk.Wallet.Wallet.GetNonceAsync(addr, walletOptions);
         }
 
         public async Task<string> SendTransactionAsync(NknSdk.Common.Protobuf.Transaction.Transaction tx)
@@ -454,56 +450,63 @@ namespace NknSdk.Client
             {
                 try
                 {
-                    return await NknSdk.Wallet.Wallet.SendTransaction(tx, this.Wallet.Options);
+                    return await NknSdk.Wallet.Wallet.SendTransactionAsync(tx, TransactionOptions.NewFrom(this.Wallet.Options));
                 }
                 catch (Exception)
                 {
                 }
             }
 
-            return await NknSdk.Wallet.Wallet.SendTransaction(tx, WalletOptions.NewFrom(this.options));
+            return await NknSdk.Wallet.Wallet.SendTransactionAsync(tx, TransactionOptions.NewFrom(this.options));
         }
 
-        public Task<string> TransferTo(string toAddress, decimal amount, WalletOptions options = null)
+        public Task<string> TransferToAsync(string toAddress, decimal amount, TransactionOptions options = null)
         {
+            options ??= new TransactionOptions();
             return RpcClient.TransferTo(toAddress, new Amount(amount), this, options);
         }
 
-        public Task<string> RegisterName(string name, WalletOptions options = null)
+        public Task<string> RegisterNameAsync(string name, TransactionOptions options = null)
         {
-            return RpcClient.RegisterName(name, this, this.Wallet.Options);
+            options ??= new TransactionOptions();
+            return RpcClient.RegisterName(name, this, options);
         }
 
-        public Task<string> TransferName(string name, string recipient, WalletOptions options = null)
+        public Task<string> TransferNameAsync(string name, string recipient, TransactionOptions options = null)
         {
-            return RpcClient.TransferName(name, recipient, this, this.Wallet.Options);
+            options ??= new TransactionOptions();
+            return RpcClient.TransferName(name, recipient, this, options);
         }
 
-        public Task<string> DeleteName(string name, WalletOptions options = null)
+        public Task<string> DeleteNameAsync(string name, TransactionOptions options = null)
         {
-            return RpcClient.DeleteName(name, this, this.Wallet.Options);
+            options ??= new TransactionOptions();
+            return RpcClient.DeleteName(name, this, options);
         }
 
-        public Task<string> Subscribe(string topic, int duration, string identifier, string meta, WalletOptions options = null)
+        public Task<string> SubscribeAsync(string topic, int duration, string identifier, string meta, TransactionOptions options = null)
         {
-            return RpcClient.Subscribe(topic, duration, identifier, meta, this, this.Wallet.Options);
+            options ??= new TransactionOptions();
+            return RpcClient.Subscribe(topic, duration, identifier, meta, this, options);
         }
 
-        public Task<string> Unsubscribe(string topic, string identifier, WalletOptions options = null)
+        public Task<string> UnsubscribeAsync(string topic, string identifier, TransactionOptions options = null)
         {
-            return RpcClient.Unsubscribe(topic, identifier, this, this.Wallet.Options);
+            options ??= new TransactionOptions();
+            return RpcClient.Unsubscribe(topic, identifier, this, options);
         }
 
         public NknSdk.Common.Protobuf.Transaction.Transaction CreateTransaction(
             NknSdk.Common.Protobuf.Transaction.Payload payload,
             long nonce,
-            WalletOptions options = null)
+            TransactionOptions options = null)
         {
+            options ??= new TransactionOptions();
             return this.Wallet.CreateTransaction(payload, nonce, options);
         }
 
         internal async Task<byte[]> SendDataManyAsync<T>(
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             byte[] data,
             SendOptions options,
             Channel<T> responseChannel = null,
@@ -560,7 +563,7 @@ namespace NknSdk.Client
         }
 
         internal async Task<byte[]> SendTextManyAsync<T>(
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             string text,
             SendOptions options,
             Channel<T> responseChannel = null,
@@ -607,18 +610,18 @@ namespace NknSdk.Client
         }
 
         internal async Task<byte[]> SendPayloadManyAsync(
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             Payload payload,
             bool isEncrypted = true,
             uint maxHoldingSeconds = 0)
         {
-            if (destinations.Count == 0)
+            if (destinations.Count() == 0)
             {
                 return null;
             }
-            else if (destinations.Count == 1)
+            else if (destinations.Count() == 1)
             {
-                return await this.SendPayloadAsync(destinations[0], payload, isEncrypted, maxHoldingSeconds);
+                return await this.SendPayloadAsync(destinations.First(), payload, isEncrypted, maxHoldingSeconds);
             }
 
             var processedDestinations = await this.ProcessDestinationManyAsync(destinations);
@@ -726,9 +729,9 @@ namespace NknSdk.Client
             this.SendThroughSocket(message.ToBytes());
         }
 
-        internal async Task<IList<string>> ProcessDestinationManyAsync(IList<string> destinations)
+        internal async Task<IList<string>> ProcessDestinationManyAsync(IEnumerable<string> destinations)
         {
-            if (destinations.Count == 0)
+            if (destinations.Count() == 0)
             {
                 throw new InvalidDestinationException("no destinations");
             }

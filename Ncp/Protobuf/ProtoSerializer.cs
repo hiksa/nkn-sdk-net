@@ -1,5 +1,6 @@
-﻿using ProtoBuf;
-using System.IO;
+﻿using System.IO;
+
+using ProtoBuf;
 
 namespace Ncp.Protobuf
 {
@@ -29,9 +30,7 @@ namespace Ncp.Protobuf
 
             using (var stream = new MemoryStream(data))
             {
-                var result = Serializer.Deserialize<T>(stream);
-
-                return result;
+                return Serializer.Deserialize<T>(stream);
             }
         }
     }

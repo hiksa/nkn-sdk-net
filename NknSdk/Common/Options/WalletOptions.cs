@@ -63,6 +63,16 @@ namespace NknSdk.Common.Options
             };
         }
 
+        public WalletOptions AssignFrom(WalletJson wallet)
+        {
+            this.Iv = wallet.Iv;
+            this.MasterKey = wallet.MasterKey;
+            this.Version = wallet.Version;
+            this.Scrypt = wallet.Scrypt;
+
+            return this;
+        }
+
         public static WalletOptions NewFrom(ClientOptions clientOptions)
         {
             var walletOptions = new WalletOptions();

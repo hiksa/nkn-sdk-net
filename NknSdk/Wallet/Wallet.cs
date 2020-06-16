@@ -128,9 +128,11 @@ namespace NknSdk.Wallet
 
         public static async Task<Wallet> FromJsonAsync(string json, WalletOptions options = null)
         {
+            options ??= new WalletOptions();
+
             var wallet = WalletJson.FromJson(json);
 
-            options = WalletOptions.FromWalletJson(wallet);
+            options.AssignFrom(wallet);
 
             var computeOptions = WalletOptions.FromWalletJson(wallet);
             computeOptions.Password = options.Password;
@@ -143,9 +145,11 @@ namespace NknSdk.Wallet
 
         public static Wallet FromJson(string json, WalletOptions options = null)
         {
+            options ??= new WalletOptions();
+
             var wallet = WalletJson.FromJson(json);
 
-            options = WalletOptions.FromWalletJson(wallet);
+            options.AssignFrom(wallet);
 
             var computeOptions = WalletOptions.FromWalletJson(wallet);
             computeOptions.Password = options.Password;
@@ -168,7 +172,7 @@ namespace NknSdk.Wallet
             return await RpcClient.GetRegistrant(options.RpcServerAddress, name);
         }
 
-        public static Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadata(
+        public static Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadataAsync(
             string topic,
             WalletOptions options = null)
         {
@@ -176,7 +180,7 @@ namespace NknSdk.Wallet
             return RpcClient.GetSubscribersWithMetadata(options.RpcServerAddress, topic, options.Offset, options.Limit, options.TxPool);
         }
 
-        public static Task<GetSubscribersResult> GetSubscribers(
+        public static Task<GetSubscribersResult> GetSubscribersAsync(
             string topic,
             WalletOptions options = null)
         {
@@ -184,13 +188,13 @@ namespace NknSdk.Wallet
             return RpcClient.GetSubscribers(options.RpcServerAddress, topic, options.Offset, options.Limit, options.TxPool);
         }
 
-        public static Task<int> GetSubscribersCount(string topic, WalletOptions options = null)
+        public static Task<int> GetSubscribersCountAsync(string topic, WalletOptions options = null)
         {
             options ??= new WalletOptions();
             return RpcClient.GetSubscribersCount(options.RpcServerAddress, topic);
         }
 
-        public static Task<GetSubscriptionResult> GetSubscription(
+        public static Task<GetSubscriptionResult> GetSubscriptionAsync(
             string topic, 
             string subscriber, 
             WalletOptions options = null)
@@ -199,25 +203,25 @@ namespace NknSdk.Wallet
             return RpcClient.GetSubscription(options.RpcServerAddress, topic, subscriber);
         }
 
-        public static Task<GetBalanceResult> GetBalance(string address, WalletOptions options = null)
+        public static Task<GetBalanceResult> GetBalanceAsync(string address, WalletOptions options = null)
         {
             options ??= new WalletOptions();
             return RpcClient.GetBalanceByAddress(options.RpcServerAddress, address);
         }
 
-        public static Task<GetNonceByAddrResult> GetNonce(string address, WalletOptions options = null)
+        public static Task<GetNonceByAddrResult> GetNonceAsync(string address, WalletOptions options = null)
         {
             options ??= new WalletOptions();
             return RpcClient.GetNonceByAddress(options.RpcServerAddress, address);
         }
 
-        public static Task<string> SendTransaction(Transaction tx, WalletOptions options = null)
+        public static Task<string> SendTransactionAsync(Transaction tx, TransactionOptions options = null)
         {
-            options ??= new WalletOptions();
+            options ??= new TransactionOptions();
             return RpcClient.SendRawTransaction(options.RpcServerAddress, tx);
         }
 
-        public static bool AddressIsValid(string address) => Common.Address.IsValid(address);
+        public static bool VerifyAddress(string address) => Common.Address.Verify(address);
 
         public static string PublicKeyToAddress(string publicKey)
         {
@@ -255,7 +259,7 @@ namespace NknSdk.Wallet
             return result;
         }
 
-        public async Task<bool> IsCorrectPasswordAsync(string password)
+        public async Task<bool> VerifyPasswordAsync(string password)
         {
             var options = new WalletOptions
             {
@@ -269,7 +273,7 @@ namespace NknSdk.Wallet
             return this.VerifyPasswordKey(passwordKey);
         }
 
-        public bool IsCorrectPassword(string password)
+        public bool VerifyPassword(string password)
         {
             var options = new WalletOptions
             {
@@ -283,57 +287,75 @@ namespace NknSdk.Wallet
             return this.VerifyPasswordKey(passwordKey);
         }
 
-        public Task<GetLatestBlockHashResult> GetLatestBlock() => Wallet.GetLatestBlockAsync(this.Options);
+        public Task<GetLatestBlockHashResult> GetLatestBlockAsync() => Wallet.GetLatestBlockAsync(this.Options);
 
         public Task<GetRegistrantResult> GetRegistrantAsync(string name) => Wallet.GetRegistrantAsync(name, this.Options);
 
-        public Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadata(string topic)
+        public Task<GetSubscribersWithMetadataResult> GetSubscribersWithMetadataAsync(string topic)
         {
-            return Wallet.GetSubscribersWithMetadata(topic, this.Options);
+            return Wallet.GetSubscribersWithMetadataAsync(topic, this.Options);
         }
 
-        public Task<GetSubscribersResult> GetSubscribers(string topic)
+        public Task<GetSubscribersResult> GetSubscribersAsync(string topic)
         {
-            return Wallet.GetSubscribers(topic, this.Options);
+            return Wallet.GetSubscribersAsync(topic, this.Options);
         }
 
-        public Task<int> GetSubscribersCount(string topic) => Wallet.GetSubscribersCount(topic, this.Options);
+        public Task<int> GetSubscribersCountAsync(string topic) => Wallet.GetSubscribersCountAsync(topic, this.Options);
 
-        public Task<GetSubscriptionResult> GetSubscription(string topic, string subscriber)
+        public Task<GetSubscriptionResult> GetSubscriptionAsync(string topic, string subscriber)
             => RpcClient.GetSubscription(this.Options.RpcServerAddress, topic, subscriber);
 
-        public Task<GetBalanceResult> GetBalance(string address = "")
+        public Task<GetBalanceResult> GetBalanceAsync(string address = "")
         {
             var addr = string.IsNullOrEmpty(address) ? this.Address : address;
 
-            return Wallet.GetBalance(addr, this.Options);
+            return Wallet.GetBalanceAsync(addr, this.Options);
         }
 
-        public Task<GetNonceByAddrResult> GetNonceAsync() => Wallet.GetNonce(this.account.Address, this.Options);     
+        public Task<GetNonceByAddrResult> GetNonceAsync() => Wallet.GetNonceAsync(this.account.Address, this.Options);     
 
-        public Task<string> SendTransactionAsync(Transaction tx) => Wallet.SendTransaction(tx, this.Options);
+        public Task<string> SendTransactionAsync(Transaction tx) => Wallet.SendTransactionAsync(tx, TransactionOptions.NewFrom(this.Options));
 
-        public Task<string> TransferToAddressAsync(string toAddress, decimal amount, WalletOptions options)
-            => RpcClient.TransferTo(toAddress, new Amount(amount), this, options);
-
-        public Task<string> RegisterName(string name, WalletOptions options) 
-            => RpcClient.RegisterName(name, this, options);
-
-        public Task<string> TransferName(string name, string recipient, WalletOptions options)
-            => RpcClient.TransferName(name, recipient, this, options);
-
-        public Task<string> DeleteName(string name, WalletOptions options)
-            => RpcClient.DeleteName(name, this, options);
-
-        public Task<string> Subscribe(string topic, int duration, string identifier, string meta, WalletOptions options)
-            => RpcClient.Subscribe(topic, duration, identifier, meta, this, options);
-
-        public Task<string> Unsubscribe(string topic, string identifier, WalletOptions options)
-            => RpcClient.Unsubscribe(topic, identifier, this, options);
-
-        public Transaction CreateOrUpdateNanoPay(string toAddress, decimal amount, int expiration, long? id, WalletOptions options)
+        public Task<string> TransferToAsync(string toAddress, decimal amount, TransactionOptions options = null)
         {
-            if (Common.Address.IsValid(toAddress) == false)
+            options ??= new TransactionOptions();
+            return RpcClient.TransferTo(toAddress, new Amount(amount), this, options);
+        }
+
+        public Task<string> RegisterNameAsync(string name, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+            return RpcClient.RegisterName(name, this, options);
+        }
+
+        public Task<string> TransferNameAsync(string name, string recipient, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+            return RpcClient.TransferName(name, recipient, this, options);
+        }
+
+        public Task<string> DeleteNameAsync(string name, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+            return RpcClient.DeleteName(name, this, options);
+        }
+
+        public Task<string> SubscribeAsync(string topic, int duration, string identifier, string meta, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+            return RpcClient.Subscribe(topic, duration, identifier, meta, this, options);
+        }
+
+        public Task<string> UnsubscribeAsync(string topic, string identifier, TransactionOptions options = null)
+        {
+            options ??= new TransactionOptions();
+            return RpcClient.Unsubscribe(topic, identifier, this, options);
+        }
+
+        public Transaction CreateOrUpdateNanoPay(string toAddress, decimal amount, int expiration, long? id, TransactionOptions options = null)
+        {
+            if (Common.Address.Verify(toAddress) == false)
             {
                 throw new System.Exception();
             }
@@ -351,7 +373,7 @@ namespace NknSdk.Wallet
             return this.CreateTransaction(payload, 0, options);
         }
 
-        public Transaction CreateTransaction(Payload payload, long nonce, WalletOptions options)
+        public Transaction CreateTransaction(Payload payload, long nonce, TransactionOptions options = null)
             => TransactionFactory.MakeTransaction(
                 this.account, 
                 payload, 
@@ -403,7 +425,6 @@ namespace NknSdk.Wallet
                 case 1: return Hash.DoubleSha256(options.Password);
 
                 case 2:
-
                     var scrypt = ScryptUtil.Scrypt(
                         options.Password,
                         options.Scrypt.Salt.FromHexString(),

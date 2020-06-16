@@ -148,9 +148,9 @@ namespace NknSdk.Common.Rpc
             string toAddress, 
             Amount amount, 
             ITransactionSender transactionSender, 
-            WalletOptions options)
+            TransactionOptions options)
         {
-            if (Address.IsValid(toAddress) == false)
+            if (Address.Verify(toAddress) == false)
             {
                 throw new Exception();
             }
@@ -171,7 +171,7 @@ namespace NknSdk.Common.Rpc
         public static async Task<string> RegisterName(
             string name, 
             ITransactionSender transactionSender, 
-            WalletOptions options)
+            TransactionOptions options)
         {
             var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();            
             
@@ -185,8 +185,8 @@ namespace NknSdk.Common.Rpc
         public static async Task<string> TransferName(
             string name, 
             string recipient, 
-            ITransactionSender transactionSender, 
-            WalletOptions options)
+            ITransactionSender transactionSender,
+            TransactionOptions options)
         {
             var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();            
             
@@ -199,8 +199,8 @@ namespace NknSdk.Common.Rpc
 
         public static async Task<string> DeleteName(
             string name, 
-            ITransactionSender transactionSender, 
-            WalletOptions options)
+            ITransactionSender transactionSender,
+            TransactionOptions options)
         {
             var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();
             
@@ -216,23 +216,23 @@ namespace NknSdk.Common.Rpc
             int duration, 
             string identifier, 
             string meta,
-            ITransactionSender txSender, 
-            WalletOptions options)
+            ITransactionSender transactionSender,
+            TransactionOptions options)
         {
-            var nonce = options.Nonce ?? (await txSender.GetNonceAsync()).Nonce.GetValueOrDefault();
+            var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();
             
-            var payload = TransactionFactory.MakeSubscribePayload(txSender.PublicKey, identifier, topic, duration, meta);
+            var payload = TransactionFactory.MakeSubscribePayload(transactionSender.PublicKey, identifier, topic, duration, meta);
             
-            var tx = txSender.CreateTransaction(payload, nonce, options);
+            var tx = transactionSender.CreateTransaction(payload, nonce, options);
 
-            return await txSender.SendTransactionAsync(tx);
+            return await transactionSender.SendTransactionAsync(tx);
         }
 
         public static async Task<string> Unsubscribe(
             string topic,
             string identifier,
             ITransactionSender transactionSender,
-            WalletOptions options)
+            TransactionOptions options)
         {
             var nonce = options.Nonce ?? (await transactionSender.GetNonceAsync()).Nonce.GetValueOrDefault();
             

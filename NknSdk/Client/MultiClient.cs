@@ -35,10 +35,8 @@ namespace NknSdk.Client
         private bool isReady;
         private bool isClosed;
         private string identifier;
-        private Client defaultClient;
         private MemoryCache messageCache;
         private IEnumerable<Regex> acceptedAddresses;
-        private IDictionary<string, Client> clients;
         private IList<Func<Session, Task>> sessionHandlers = new List<Func<Session, Task>>();
         private IList<Func<MessageHandlerRequest, Task<object>>> messageHandlers = new List<Func<MessageHandlerRequest, Task<object>>>();
 
@@ -52,7 +50,7 @@ namespace NknSdk.Client
 
             this.InitializeClients();
 
-            this.key = this.defaultClient.Key;
+            this.key = this.DefaultClient.Key;
             this.Address = (string.IsNullOrWhiteSpace(options.Identifier) ? "" : options.Identifier + ".") + this.key.PublicKey;
 
             this.messageHandlers = new List<Func<MessageHandlerRequest, Task<object>>>();
@@ -69,6 +67,10 @@ namespace NknSdk.Client
 
         public string Address { get; }
 
+        public IDictionary<string, Client> Clients { get; private set; }
+
+        public Client DefaultClient { get; private set; }
+
         public void OnMessage(Func<MessageHandlerRequest, Task<object>> func) => this.messageHandlers.Add(func);
 
         /// <summary>
@@ -79,13 +81,13 @@ namespace NknSdk.Client
 
         public void OnConnect(Action<ConnectHandlerRequest> func)
         {
-            var tasks = this.clients.Keys.Select(clientId =>
+            var tasks = this.Clients.Keys.Select(clientId =>
             {
                 return Task.Run(async () =>
                 {
                     var connectChannel = Channel.CreateBounded<ConnectHandlerRequest>(1);
 
-                    this.clients[clientId].OnConnect(async request => await connectChannel.Writer.WriteAsync(request));
+                    this.Clients[clientId].OnConnect(async request => await connectChannel.Writer.WriteAsync(request));
 
                     return await connectChannel.Reader.ReadAsync();
                 });
@@ -147,7 +149,7 @@ namespace NknSdk.Client
 
             var readyClientIds = this.GetReadyClientIds();
 
-            destination = await this.defaultClient.ProcessDestinationAsync(destination);
+            destination = await this.DefaultClient.ProcessDestinationAsync(destination);
 
             try
             {
@@ -179,7 +181,7 @@ namespace NknSdk.Client
 
             var readyClientIds = this.GetReadyClientIds();
 
-            destination = await this.defaultClient.ProcessDestinationAsync(destination);
+            destination = await this.DefaultClient.ProcessDestinationAsync(destination);
 
             try
             {
@@ -203,7 +205,7 @@ namespace NknSdk.Client
         }
 
         public async Task<SendMessageResponse<TResponse>> SendAsync<TResponse>(
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             byte[] data,
             SendOptions options = null)
         {
@@ -211,7 +213,7 @@ namespace NknSdk.Client
 
             var readyClientIds = this.GetReadyClientIds();
 
-            destinations = await this.defaultClient.ProcessDestinationManyAsync(destinations);
+            destinations = await this.DefaultClient.ProcessDestinationManyAsync(destinations);
 
             try
             {
@@ -235,7 +237,7 @@ namespace NknSdk.Client
         }
 
         public async Task<SendMessageResponse<TResponse>> SendAsync<TResponse>(
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             string text,
             SendOptions options = null)
         {
@@ -243,7 +245,7 @@ namespace NknSdk.Client
 
             var readyClientIds = this.GetReadyClientIds();
 
-            destinations = await this.defaultClient.ProcessDestinationManyAsync(destinations);
+            destinations = await this.DefaultClient.ProcessDestinationManyAsync(destinations);
 
             try
             {
@@ -333,11 +335,11 @@ namespace NknSdk.Client
             {
             }
 
-            foreach (var clientId in this.clients.Keys)
+            foreach (var clientId in this.Clients.Keys)
             {
                 try
                 {
-                    this.clients[clientId].Close();
+                    this.Clients[clientId].Close();
                 }
                 catch (Exception)
                 {
@@ -350,13 +352,13 @@ namespace NknSdk.Client
 
         public async Task<GetLatestBlockHashResult> GetLatestBlockAsync()
         {
-            foreach (var clientId in this.clients.Keys)
+            foreach (var clientId in this.Clients.Keys)
             {
-                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                if (string.IsNullOrEmpty(this.Clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
                     try
                     {
-                        return await Wallet.Wallet.GetLatestBlockAsync(this.clients[clientId].Wallet.Options);
+                        return await Wallet.Wallet.GetLatestBlockAsync(this.Clients[clientId].Wallet.Options);
                     }
                     catch (Exception)
                     {
@@ -369,13 +371,13 @@ namespace NknSdk.Client
 
         public async Task<GetRegistrantResult> GetRegistrantAsync(string name)
         {
-            foreach (var clientId in this.clients.Keys)
+            foreach (var clientId in this.Clients.Keys)
             {
-                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                if (string.IsNullOrEmpty(this.Clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
                     try
                     {
-                        return await Wallet.Wallet.GetRegistrantAsync(name, this.clients[clientId].Wallet.Options);
+                        return await Wallet.Wallet.GetRegistrantAsync(name, this.Clients[clientId].Wallet.Options);
                     }
                     catch (Exception)
                     {
@@ -390,14 +392,14 @@ namespace NknSdk.Client
         {
             options ??= new PublishOptions();
 
-            foreach (var clientId in this.clients.Keys)
+            foreach (var clientId in this.Clients.Keys)
             {
-                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                if (string.IsNullOrEmpty(this.Clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
                     try
                     {
-                        var mergedOptions = this.clients[clientId].Wallet.Options.MergeWith(options);
-                        return await Wallet.Wallet.GetSubscribers(topic, mergedOptions);
+                        var mergedOptions = this.Clients[clientId].Wallet.Options.MergeWith(options);
+                        return await Wallet.Wallet.GetSubscribersAsync(topic, mergedOptions);
                     }
                     catch (Exception)
                     {
@@ -406,18 +408,18 @@ namespace NknSdk.Client
             }
 
             var walletOptions = WalletOptions.NewFrom(this.options).AssignFrom(options);
-            return await Wallet.Wallet.GetSubscribers(topic, walletOptions);
+            return await Wallet.Wallet.GetSubscribersAsync(topic, walletOptions);
         }
 
         public async Task<int> GetSubscribersCountAsync(string topic)
         {
-            foreach (var clientId in this.clients.Keys)
+            foreach (var clientId in this.Clients.Keys)
             {
-                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                if (string.IsNullOrEmpty(this.Clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
                     try
                     {
-                        return await Wallet.Wallet.GetSubscribersCount(topic, this.clients[clientId].Wallet.Options);
+                        return await Wallet.Wallet.GetSubscribersCountAsync(topic, this.Clients[clientId].Wallet.Options);
                     }
                     catch (Exception)
                     {
@@ -425,21 +427,21 @@ namespace NknSdk.Client
                 }
             }
 
-            return await Wallet.Wallet.GetSubscribersCount(topic, WalletOptions.NewFrom(this.options));
+            return await Wallet.Wallet.GetSubscribersCountAsync(topic, WalletOptions.NewFrom(this.options));
         }
 
         public async Task<GetSubscriptionResult> GetSubscriptionAsync(string topic, string subscriber)
         {
-            foreach (var clientId in this.clients.Keys)
+            foreach (var clientId in this.Clients.Keys)
             {
-                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                if (string.IsNullOrEmpty(this.Clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
                     try
                     {
-                        return await Wallet.Wallet.GetSubscription(
+                        return await Wallet.Wallet.GetSubscriptionAsync(
                             topic,
                             subscriber,
-                            this.clients[clientId].Wallet.Options);
+                            this.Clients[clientId].Wallet.Options);
                     }
                     catch (Exception)
                     {
@@ -447,7 +449,7 @@ namespace NknSdk.Client
                 }
             }
 
-            return await Wallet.Wallet.GetSubscription(
+            return await Wallet.Wallet.GetSubscriptionAsync(
                 topic,
                 subscriber,
                 WalletOptions.NewFrom(this.options));
@@ -455,15 +457,15 @@ namespace NknSdk.Client
 
         public async Task<Amount> GetBalanceAsync(string address = null)
         {
-            var addr = string.IsNullOrEmpty(address) ? this.defaultClient.Wallet.Address : address;
+            var addr = string.IsNullOrEmpty(address) ? this.DefaultClient.Wallet.Address : address;
 
-            foreach (var clientId in this.clients.Keys)
+            foreach (var clientId in this.Clients.Keys)
             {
-                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                if (string.IsNullOrEmpty(this.Clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
                     try
                     {
-                        var balanceResult = await Wallet.Wallet.GetBalance(addr, this.clients[clientId].Wallet.Options);
+                        var balanceResult = await Wallet.Wallet.GetBalanceAsync(addr, this.Clients[clientId].Wallet.Options);
 
                         return new Amount(balanceResult.Amount);
                     }
@@ -473,7 +475,7 @@ namespace NknSdk.Client
                 }
             }
 
-            var result = await Wallet.Wallet.GetBalance(addr, WalletOptions.NewFrom(this.options));
+            var result = await Wallet.Wallet.GetBalanceAsync(addr, WalletOptions.NewFrom(this.options));
 
             return new Amount(result.Amount);
         }
@@ -485,18 +487,18 @@ namespace NknSdk.Client
 
         public async Task<GetNonceByAddrResult> GetNonceAsync(string address = null, bool txPool = false)
         {
-            var addr = string.IsNullOrEmpty(address) ? this.defaultClient.Wallet.Address : address;
+            var addr = string.IsNullOrEmpty(address) ? this.DefaultClient.Wallet.Address : address;
 
-            foreach (var clientId in this.clients.Keys)
+            foreach (var clientId in this.Clients.Keys)
             {
-                if (string.IsNullOrEmpty(this.clients[clientId].Wallet.Options.RpcServerAddress) == false)
+                if (string.IsNullOrEmpty(this.Clients[clientId].Wallet.Options.RpcServerAddress) == false)
                 {
                     try
                     {
-                        var options = this.clients[clientId].Wallet.Options.Clone();
+                        var options = this.Clients[clientId].Wallet.Options.Clone();
                         options.TxPool = txPool;
 
-                        var getNonceResult = await Wallet.Wallet.GetNonce(addr, options);
+                        var getNonceResult = await Wallet.Wallet.GetNonceAsync(addr, options);
 
                         return getNonceResult;
                     }
@@ -509,49 +511,45 @@ namespace NknSdk.Client
             var walletOptions = WalletOptions.NewFrom(this.options);
             walletOptions.TxPool = txPool;
 
-            return await Wallet.Wallet.GetNonce(addr, walletOptions);
+            return await Wallet.Wallet.GetNonceAsync(addr, walletOptions);
         }
 
         public async Task<string> SendTransactionAsync(Transaction tx)
         {
-            var clients = this.clients.Values.Where(x => string.IsNullOrEmpty(x.Wallet.Options.RpcServerAddress) == false);
+            var clients = this.Clients.Values.Where(x => string.IsNullOrEmpty(x.Wallet.Options.RpcServerAddress) == false);
             if (clients.Count() > 0)
             {
-                var sendTransactionTasks = clients.Select(x => Wallet.Wallet.SendTransaction(tx, x.Wallet.Options));
+                var sendTransactionTasks = clients
+                    .Select(x => Wallet.Wallet.SendTransactionAsync(tx, TransactionOptions.NewFrom(x.Wallet.Options)));
+
                 return await await Task.WhenAny(sendTransactionTasks);
             }
 
-            return await Wallet.Wallet.SendTransaction(tx, WalletOptions.NewFrom(this.options));
+            return await Wallet.Wallet.SendTransactionAsync(tx, TransactionOptions.NewFrom(this.options));
         }
 
-        public Task<string> TransferTo(string toAddress, decimal amount, TransactionOptions options = null)
+        public Task<string> TransferToAsync(string toAddress, decimal amount, TransactionOptions options = null)
         {
             options ??= new TransactionOptions();
 
-            var walletOptions = WalletOptions.NewFrom(options);
-
-            return RpcClient.TransferTo(toAddress, new Amount(amount), this, walletOptions);
+            return RpcClient.TransferTo(toAddress, new Amount(amount), this, options);
         }
 
-        public Task<string> RegisterName(string name, TransactionOptions options = null)
+        public Task<string> RegisterNameAsync(string name, TransactionOptions options = null)
         {
             options ??= new TransactionOptions();
 
-            var walletOptions = WalletOptions.NewFrom(options);
-
-            return RpcClient.RegisterName(name, this, walletOptions);
+            return RpcClient.RegisterName(name, this, options);
         }
 
-        public Task<string> DeleteName(string name, TransactionOptions options = null)
+        public Task<string> DeleteNameAsync(string name, TransactionOptions options = null)
         {
             options ??= new TransactionOptions();
 
-            var walletOptions = WalletOptions.NewFrom(options);
-
-            return RpcClient.DeleteName(name, this, walletOptions);
+            return RpcClient.DeleteName(name, this, options);
         }
 
-        public Task<string> Subscribe(
+        public Task<string> SubscribeAsync(
             string topic,
             int duration,
             string identifier,
@@ -560,23 +558,19 @@ namespace NknSdk.Client
         {
             options ??= new TransactionOptions();
 
-            var walletOptions = WalletOptions.NewFrom(options);
-
-            return RpcClient.Subscribe(topic, duration, identifier, meta, this, walletOptions);
+            return RpcClient.Subscribe(topic, duration, identifier, meta, this, options);
         }
 
-        public Task<string> Unsubscribe(string topic, string identifier, TransactionOptions options = null)
+        public Task<string> UnsubscribeAsync(string topic, string identifier, TransactionOptions options = null)
         {
             options ??= new TransactionOptions();
 
-            var walletOptions = WalletOptions.NewFrom(options);
-
-            return RpcClient.Unsubscribe(topic, identifier, this, walletOptions);
+            return RpcClient.Unsubscribe(topic, identifier, this, options);
         }
 
-        public Transaction CreateTransaction(Payload payload, long nonce, WalletOptions options)
+        public Transaction CreateTransaction(Payload payload, long nonce, TransactionOptions options)
         {
-            return this.defaultClient.Wallet.CreateTransaction(payload, nonce, options);
+            return this.DefaultClient.Wallet.CreateTransaction(payload, nonce, options);
         }
 
         private void InitializeClients()
@@ -731,7 +725,7 @@ namespace NknSdk.Client
 
                         if (responded == false)
                         {
-                            foreach (var client in this.clients)
+                            foreach (var client in this.Clients)
                             {
                                 if (client.Value.IsReady)
                                 {
@@ -748,10 +742,10 @@ namespace NknSdk.Client
                 });
             }
 
-            this.clients = clients;
+            this.Clients = clients;
             this.identifier = baseIdentifier;
             this.options.Identifier = baseIdentifier;
-            this.defaultClient = clients[clientIds.First()];
+            this.DefaultClient = clients[clientIds.First()];
         }
 
         private bool IsAcceptedAddress(string address)
@@ -781,7 +775,7 @@ namespace NknSdk.Client
 
             async Task SendSessionDataHandler(string localClientId, string remoteClientId, byte[] data)
             {
-                var client = this.clients[localClientId];
+                var client = this.Clients[localClientId];
                 if (client.IsReady == false)
                 {
                     throw new ClientNotReadyException();
@@ -796,8 +790,7 @@ namespace NknSdk.Client
 
         private IEnumerable<string> GetReadyClientIds()
         {
-            var readyClientIds = this.clients.Keys
-                .Where(clientId => this.clients.ContainsKey(clientId) && this.clients[clientId].IsReady);
+            var readyClientIds = this.Clients.Keys.Where(clientId => this.Clients[clientId].IsReady);
 
             if (readyClientIds.Count() == 0)
             {
@@ -977,7 +970,7 @@ namespace NknSdk.Client
 
         private async Task<byte[]> SendWithClientAsync<T>(
             string clientId,
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             byte[] data,
             SendOptions options,
             Channel<T> responseChannel = null,
@@ -986,7 +979,7 @@ namespace NknSdk.Client
             var client = this.GetClient(clientId);
 
             var messageId = await client.SendDataManyAsync(
-                destinations.Select(x => Common.Address.AddIdentifierPrefix(x, clientId)).ToList(),
+                destinations.Select(x => Common.Address.AddIdentifierPrefix(x, clientId)),
                 data,
                 options,
                 responseChannel,
@@ -997,7 +990,7 @@ namespace NknSdk.Client
 
         private async Task<byte[]> SendWithClientAsync<T>(
             string clientId,
-            IList<string> destinations,
+            IEnumerable<string> destinations,
             string text,
             SendOptions options,
             Channel<T> responseChannel = null,
@@ -1006,7 +999,7 @@ namespace NknSdk.Client
             var client = this.GetClient(clientId);
 
             var messageId = await client.SendTextManyAsync(
-                destinations.Select(x => Common.Address.AddIdentifierPrefix(x, clientId)).ToList(),
+                destinations.Select(x => Common.Address.AddIdentifierPrefix(x, clientId)),
                 text,
                 options,
                 responseChannel,
@@ -1017,12 +1010,12 @@ namespace NknSdk.Client
 
         private Client GetClient(string clientId)
         {
-            if (this.clients.ContainsKey(clientId) == false)
+            if (this.Clients.ContainsKey(clientId) == false)
             {
                 throw new InvalidArgumentException($"no client with such clientId: {clientId}");
             }
 
-            var client = this.clients[clientId];
+            var client = this.Clients[clientId];
             if (client == null)
             {
                 throw new InvalidArgumentException($"no client with such clientId: {clientId}");

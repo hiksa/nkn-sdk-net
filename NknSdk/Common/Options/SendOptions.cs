@@ -20,5 +20,19 @@
         public string MessageId { get; set; }
 
         public string ReplyToId { get; set; }
+
+        public static SendOptions NewFrom(PublishOptions publishOptions)
+        {
+            var options = new SendOptions();
+
+            return options.AssignFrom(publishOptions);
+        }
+
+        public SendOptions AssignFrom(PublishOptions publishOptions)
+        {
+            this.NoReply = publishOptions.NoReply;
+
+            return this;
+        }
     }
 }

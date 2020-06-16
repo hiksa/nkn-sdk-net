@@ -12,7 +12,7 @@ namespace NknSdk.Common
 
         Task<GetNonceByAddrResult> GetNonceAsync();
 
-        Transaction CreateTransaction(Payload payload, long nonce, WalletOptions options);
+        Transaction CreateTransaction(Payload payload, long nonce, TransactionOptions options);
 
         Task<string> SendTransactionAsync(Transaction tx);
     }

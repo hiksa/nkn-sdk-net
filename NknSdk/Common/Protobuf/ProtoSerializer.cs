@@ -30,9 +30,7 @@ namespace NknSdk.Common.Protobuf
 
             using (var stream = new MemoryStream(data))
             {
-                var result = Serializer.Deserialize<T>(stream);
-
-                return result;
+                return Serializer.Deserialize<T>(stream);
             }
         }
     }

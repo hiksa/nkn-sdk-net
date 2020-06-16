@@ -15,7 +15,7 @@ namespace NknSdk.Common
         public static readonly int PrefixLength = Address.Prefix.Length / 2;
         public static readonly int FullLength = Address.PrefixLength + Address.Uint160Length + Address.CheckSumLength;
 
-        public static bool IsValid(string address)
+        public static bool Verify(string address)
         {
             try
             {

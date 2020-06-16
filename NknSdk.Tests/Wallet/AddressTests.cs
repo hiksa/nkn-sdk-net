@@ -15,7 +15,7 @@ namespace NknSdk.Tests.Wallet
         {
             var address = "NKNZw5tHypCKCGSuuxbX2LUV8X2f95gd8WjE";
 
-            var result = Address.IsValid(address);
+            var result = Address.Verify(address);
 
             Assert.True(result);
         }
