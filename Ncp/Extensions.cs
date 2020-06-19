@@ -105,6 +105,8 @@ namespace Ncp
         {
             try
             {
+               // await Task.Delay(2);
+
                 var result = await await Task.WhenAny(tasks);
 
                 tokenSource.Cancel();
@@ -125,7 +127,7 @@ namespace Ncp
             timer = new Timer(async state =>
             {
                 await channel.CompleteAsync();
-                await timer.DisposeAsync();
+                timer.Dispose();
             },
             null,
             timeout,

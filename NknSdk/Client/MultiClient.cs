@@ -42,9 +42,9 @@ namespace NknSdk.Client
 
         public MultiClient(MultiClientOptions options = null)
         {
-            options ??= new MultiClientOptions();
+            options = options ?? new MultiClientOptions();
 
-            options.Identifier ??= "";
+            options.Identifier = options.Identifier ?? "";
 
             this.options = options;
 
@@ -145,7 +145,7 @@ namespace NknSdk.Client
             string text,
             SendOptions options = null)
         {
-            options ??= new SendOptions();
+            options = options ?? new SendOptions();
 
             var readyClientIds = this.GetReadyClientIds();
 
@@ -177,7 +177,7 @@ namespace NknSdk.Client
             byte[] data,
             SendOptions options = null)
         {
-            options ??= new SendOptions();
+            options = options ?? new SendOptions();
 
             var readyClientIds = this.GetReadyClientIds();
 
@@ -209,7 +209,7 @@ namespace NknSdk.Client
             byte[] data,
             SendOptions options = null)
         {
-            options ??= new SendOptions();
+            options = options ?? new SendOptions();
 
             var readyClientIds = this.GetReadyClientIds();
 
@@ -241,7 +241,7 @@ namespace NknSdk.Client
             string text,
             SendOptions options = null)
         {
-            options ??= new SendOptions();
+            options = options ?? new SendOptions();
 
             var readyClientIds = this.GetReadyClientIds();
 
@@ -273,7 +273,7 @@ namespace NknSdk.Client
             string text,
             PublishOptions options = null)
         {
-            options ??= new PublishOptions();
+            options = options ?? new PublishOptions();
             options.NoReply = true;
 
             var subscribers = await this.GetAllSubscribersAsync(topic, options);
@@ -286,7 +286,7 @@ namespace NknSdk.Client
             byte[] data,
             PublishOptions options = null)
         {
-            options ??= new PublishOptions();
+            options = options ?? new PublishOptions();
             options.NoReply = true;
 
             var subscribers = await this.GetAllSubscribersAsync(topic, options);
@@ -302,7 +302,7 @@ namespace NknSdk.Client
         /// <returns>The session object</returns>
         public async Task<Session> DialAsync(string remoteAddress, SessionOptions options = null)
         {
-            options ??= new SessionOptions();
+            options = options ?? new SessionOptions();
 
             var dialTimeout = Ncp.Constants.DefaultInitialRetransmissionTimeout;
 
@@ -390,7 +390,7 @@ namespace NknSdk.Client
 
         public async Task<GetSubscribersResult> GetSubscribersAsync(string topic, PublishOptions options = null)
         {
-            options ??= new PublishOptions();
+            options = options ?? new PublishOptions();
 
             foreach (var clientId in this.Clients.Keys)
             {
@@ -530,21 +530,21 @@ namespace NknSdk.Client
 
         public Task<string> TransferToAsync(string toAddress, decimal amount, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
 
             return RpcClient.TransferTo(toAddress, new Amount(amount), this, options);
         }
 
         public Task<string> RegisterNameAsync(string name, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
 
             return RpcClient.RegisterName(name, this, options);
         }
 
         public Task<string> DeleteNameAsync(string name, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
 
             return RpcClient.DeleteName(name, this, options);
         }
@@ -556,14 +556,14 @@ namespace NknSdk.Client
             string meta,
             TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
 
             return RpcClient.Subscribe(topic, duration, identifier, meta, this, options);
         }
 
         public Task<string> UnsubscribeAsync(string topic, string identifier, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
 
             return RpcClient.Unsubscribe(topic, identifier, this, options);
         }

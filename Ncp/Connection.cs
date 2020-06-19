@@ -173,7 +173,7 @@ namespace Ncp
                         throw new Exception("sequence missmatch");
                     }
 
-                    //Console.WriteLine($"Sending session message. Packet Id: {sequenceId}, Data Length: {packet.Data.Length}, Data: {string.Join(", ", packet.Data.Take(10))}");
+                    Console.WriteLine($"Sending session message. Packet Id: {sequenceId}, Data Length: {packet.Data.Length}, Data: {string.Join(", ", packet.Data.Take(10))}");
                     await this.session.SendDataAsync(this.LocalClientId, this.RemoteClientId, data);
                 }
                 catch (Exception e)

@@ -6,7 +6,7 @@ namespace Ncp
     public static class Constants
     {
         public const int MinSequenceId = 1;
-        public const int DefaultMtu = 1024;
+        public const int DefaultMtu = 100_024;
         public const int DefaultInitialConnectionWindowSize = 32;
         public const int DefaultMaxConnectionWindowSize = 256;
         public const int DefaultMinConnectionWindowSize = 1;

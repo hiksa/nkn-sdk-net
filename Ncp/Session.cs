@@ -192,10 +192,10 @@ namespace Ncp
             }
 
             var packet = ProtoSerializer.Deserialize<Packet>(buffer);
-            //if (packet.Data != null)
-            //{
-            //    Console.WriteLine($"Receiving session message. Packet Id: {packet.SequenceId}, Data Lengtht: {packet.Data?.Length}, Data: {(packet.Data == null ? string.Empty : string.Join(", ", packet.Data.Take(10)))}");
-            //}
+            if (packet.Data != null)
+            {
+                Console.WriteLine($"Receiving session message. Packet Id: {packet.SequenceId}, Data Lengtht: {packet.Data?.Length}, Data: {(packet.Data == null ? string.Empty : string.Join(", ", packet.Data.Take(10)))}");
+            }
 
             if (packet.IsClose)
             {

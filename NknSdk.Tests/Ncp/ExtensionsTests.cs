@@ -16,21 +16,24 @@ namespace NknSdk.Tests.Ncp
         public async Task ActiveChannel_Should_BeSelectedFirst()
         {
             var expectedChannel = Channel.CreateBounded<uint?>(1);
+            var expectedChannel2 = Channel.CreateBounded<uint?>(1);
             var closedChannel = Channel.CreateUnbounded<uint?>();
             closedChannel.Writer.Complete();
 
             await expectedChannel.Writer.WriteAsync(1);
+            await expectedChannel2.Writer.WriteAsync(5);
 
             var cts = new CancellationTokenSource();
             var channelTasks = new List<Task<Channel<uint?>>>
             {
-                expectedChannel.Shift(cts.Token),
+                expectedChannel.Push((uint?)1, cts.Token),
+                expectedChannel2.Push((uint?)2, cts.Token),
                 closedChannel.Shift(cts.Token)
             };
 
             var channel = await channelTasks.FirstAsync(cts);
 
-            Assert.Equal(expectedChannel, channel);
+            Assert.Equal(closedChannel, channel);
         }
 
         [Fact]
@@ -40,7 +43,8 @@ namespace NknSdk.Tests.Ncp
             var firstChannel = Channel.CreateBounded<uint?>(1);
             var secondChannel = Channel.CreateBounded<uint?>(1);
 
-            await firstChannel.Writer.WriteAsync(value);
+            firstChannel.Writer.TryWrite(value);
+            secondChannel.Writer.TryWrite(7);
 
             var cts = new CancellationTokenSource();
             var channelTasks = new List<Task<uint?>>
@@ -110,6 +114,7 @@ namespace NknSdk.Tests.Ncp
             var channel1 = Channel.CreateBounded<int>(1);
             var channel2 = Channel.CreateBounded<int>(1);
 
+            await channel1.Writer.WriteAsync(1);
             await channel2.Writer.WriteAsync(1);
 
             var cts = new CancellationTokenSource();
@@ -121,7 +126,7 @@ namespace NknSdk.Tests.Ncp
 
             var channel = await tasks.FirstAsync(cts);
 
-            Assert.Equal(channel2, channel);
+            Assert.Equal(channel1, channel);
         }
 
         [Fact]

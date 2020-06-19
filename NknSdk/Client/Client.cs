@@ -160,7 +160,7 @@ namespace NknSdk.Client
             string text,
             SendOptions options = null)
         {
-            options ??= new SendOptions();
+            options = options ?? new SendOptions();
 
             try
             {
@@ -196,7 +196,7 @@ namespace NknSdk.Client
             byte[] data,
             SendOptions options = null)
         {
-            options ??= new SendOptions();
+            options = options ?? new SendOptions();
 
             try
             {
@@ -218,7 +218,7 @@ namespace NknSdk.Client
             byte[] data,
             SendOptions options = null)
         {
-            options ??= new SendOptions();
+            options = options ?? new SendOptions();
 
             try
             {
@@ -240,7 +240,7 @@ namespace NknSdk.Client
             string text,
             SendOptions options = null)
         {
-            options ??= new SendOptions();
+            options = options ?? new SendOptions();
 
             try
             {
@@ -262,7 +262,7 @@ namespace NknSdk.Client
             string text,
             PublishOptions options = null)
         {
-            options ??= new PublishOptions();
+            options = options ?? new PublishOptions();
             options.NoReply = true;
 
             var subscribers = await this.GetAllSubscribersAsync(topic, options);
@@ -275,7 +275,7 @@ namespace NknSdk.Client
             byte[] data,
             PublishOptions options = null)
         {
-            options ??= new PublishOptions();
+            options = options ?? new PublishOptions();
             options.NoReply = true;
 
             var subscribers = await this.GetAllSubscribersAsync(topic, options);
@@ -321,7 +321,7 @@ namespace NknSdk.Client
             string topic, 
             PublishOptions options = null)
         {
-            options ??= new PublishOptions();
+            options = options ?? new PublishOptions();
 
             if (string.IsNullOrWhiteSpace(this.Wallet.Options.RpcServerAddress))
             {
@@ -341,7 +341,7 @@ namespace NknSdk.Client
 
         public async Task<GetSubscribersResult> GetSubscribersAsync(string topic, PublishOptions options = null)
         {
-            options ??= new PublishOptions();
+            options = options ?? new PublishOptions();
 
             if (string.IsNullOrWhiteSpace(this.Wallet.Options.RpcServerAddress))
             {
@@ -393,7 +393,7 @@ namespace NknSdk.Client
 
         public async Task<Amount> GetBalanceAsync(string address = "", WalletOptions options = null)
         {
-            options ??= new WalletOptions();
+            options = options ?? new WalletOptions();
             var addr = string.IsNullOrEmpty(address) ? this.Wallet.Address : address;
 
             if (string.IsNullOrWhiteSpace(this.Wallet.Options.RpcServerAddress))
@@ -462,37 +462,37 @@ namespace NknSdk.Client
 
         public Task<string> TransferToAsync(string toAddress, decimal amount, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
             return RpcClient.TransferTo(toAddress, new Amount(amount), this, options);
         }
 
         public Task<string> RegisterNameAsync(string name, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
             return RpcClient.RegisterName(name, this, options);
         }
 
         public Task<string> TransferNameAsync(string name, string recipient, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
             return RpcClient.TransferName(name, recipient, this, options);
         }
 
         public Task<string> DeleteNameAsync(string name, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
             return RpcClient.DeleteName(name, this, options);
         }
 
         public Task<string> SubscribeAsync(string topic, int duration, string identifier, string meta, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
             return RpcClient.Subscribe(topic, duration, identifier, meta, this, options);
         }
 
         public Task<string> UnsubscribeAsync(string topic, string identifier, TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
             return RpcClient.Unsubscribe(topic, identifier, this, options);
         }
 
@@ -501,7 +501,7 @@ namespace NknSdk.Client
             long nonce,
             TransactionOptions options = null)
         {
-            options ??= new TransactionOptions();
+            options = options ?? new TransactionOptions();
             return this.Wallet.CreateTransaction(payload, nonce, options);
         }
 
@@ -1020,7 +1020,7 @@ namespace NknSdk.Client
 
         private async Task<IEnumerable<string>> GetAllSubscribersAsync(string topic, PublishOptions options)
         {
-            options ??= new PublishOptions();
+            options = options ?? new PublishOptions();
 
             var offset = options.Offset;
 
