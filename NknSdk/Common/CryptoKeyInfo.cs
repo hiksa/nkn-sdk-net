@@ -1,4 +1,4 @@
-﻿using NSec.Cryptography;
+﻿using Chaos.NaCl;
 
 using NknSdk.Common.Extensions;
 
@@ -6,8 +6,6 @@ namespace NknSdk.Common
 {
     public class CryptoKeyInfo
     {
-        public Key Key { get; set;  }
-
         public string PublicKey { get; set; }
 
         public byte[] PrivateKey { get; set; }
@@ -16,18 +14,15 @@ namespace NknSdk.Common
 
         public static CryptoKeyInfo FromSeed(byte[] seed)
         {
-            var publicKey = new byte[Chaos.NaCl.Ed25519.PublicKeySizeInBytes];
-            var privateKey = new byte[Chaos.NaCl.Ed25519.ExpandedPrivateKeySizeInBytes];
+            var publicKey = new byte[Ed25519.PublicKeySizeInBytes];
+            var privateKey = new byte[Ed25519.ExpandedPrivateKeySizeInBytes];
 
-            Chaos.NaCl.Ed25519.KeyPairFromSeed(out publicKey, out privateKey, seed);
-
-            var key = Key.Import(Hash.Algorithm, seed, KeyBlobFormat.RawPrivateKey);
+            Ed25519.KeyPairFromSeed(out publicKey, out privateKey, seed);
 
             return new CryptoKeyInfo
             {
                 PrivateKey = privateKey,
-                PublicKey = publicKey.ToHexString(),
-                Key = key
+                PublicKey = publicKey.ToHexString()
             };
         }
     }

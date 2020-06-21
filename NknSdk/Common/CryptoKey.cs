@@ -1,8 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
-
-using NSec.Cryptography;
+using Chaos.NaCl;
 
 using NknSdk.Common.Exceptions;
 using NknSdk.Common.Extensions;
@@ -68,9 +67,7 @@ namespace NknSdk.Common
 
         public byte[] Sign(byte[] message)
         {
-            var algorithm = SignatureAlgorithm.Ed25519;
-
-            return algorithm.Sign(this.keyInfo.Key, message);
+            return Ed25519.Sign(message, this.keyInfo.PrivateKey);
         }
 
         public byte[] GetSharedSecret(string otherPublicKey)
