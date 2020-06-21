@@ -26,7 +26,7 @@ namespace NknSdk.Common
         
         public static byte[] DecryptSymmetric(byte[] message, byte[] nonce, byte[] sharedKey)
         {
-            return Sodium.SecretBox.Open(message, nonce, sharedKey);
+            return XSalsa20Poly1305.TryDecrypt(message, sharedKey, nonce);
         }
 
         public static string Sha256(byte[] input)
