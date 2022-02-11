@@ -5,7 +5,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Google.Protobuf" Version="3.11.4" />
+    <PackageReference Include="Google.Protobuf" Version="3.15.0" />
     <PackageReference Include="Open.ChannelExtensions" Version="3.4.0" />
     <PackageReference Include="protobuf-net" Version="2.4.6" />
     <PackageReference Include="System.Linq.Async" Version="4.1.1" />
